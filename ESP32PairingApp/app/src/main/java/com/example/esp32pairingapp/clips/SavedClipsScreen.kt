@@ -25,6 +25,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.Instant
 
 /**
  * Model for events/clips from cloud backend.
@@ -164,23 +165,23 @@ private fun RemoteThumbnail(
 }
 
 /**
- * Shared content: "Load Clips from Drive" button and list of clips with thumbnails and Play.
- * Only loads data when user is logged in (has cloud auth token).
+ * Shared content: "Load Clips" button and list of clips with thumbnails and Play.
+ * [onRecentClipDetected] is called with the newest clip if it was created within the last
+ * 30 seconds — used as a fallback trigger for the intruder alert overlay.
  */
 @Composable
 fun SavedClipsContent(
     httpClient: EspHttpClient,
     modifier: Modifier = Modifier,
     onError: (String) -> Unit = {},
-    showTitle: Boolean = true
+    showTitle: Boolean = true,
+    onRecentClipDetected: ((VideoClip) -> Unit)? = null,
 ) {
     var clips by remember { mutableStateOf<List<VideoClip>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val authToken = CloudBackendPrefs.getAuthToken(context)
-    // Auth disabled — clips are visible to all users.
-    // val isLoggedIn = !authToken.isNullOrBlank()
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -203,8 +204,24 @@ fun SavedClipsContent(
                         isLoading = true
                         onError("")
                         try {
-                            clips = loadClipsFromCloud(httpClient, authToken)
+                            val loaded = loadClipsFromCloud(httpClient, authToken)
+                            clips = loaded
                             onError("✅ Loaded ${clips.size} events")
+
+                            // Fallback alert: if the newest clip arrived in the last 30 s,
+                            // surface the intruder overlay in case SSE was missed.
+                            if (onRecentClipDetected != null) {
+                                val newest = loaded.firstOrNull()
+                                if (newest != null) {
+                                    val ageMs = try {
+                                        System.currentTimeMillis() -
+                                            Instant.parse(newest.timestamp).toEpochMilli()
+                                    } catch (_: Exception) { Long.MAX_VALUE }
+                                    if (ageMs in 0..30_000) {
+                                        onRecentClipDetected(newest)
+                                    }
+                                }
+                            }
                         } catch (e: Exception) {
                             onError("❌ Failed to load clips: ${e.message}")
                             Log.e("SavedClips", "Load error", e)

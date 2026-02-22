@@ -825,7 +825,20 @@ fun StreamPage(
             SavedClipsContent(
                 httpClient = httpClient,
                 onError = { errorMessage = it.ifBlank { null } },
-                showTitle = false
+                showTitle = false,
+                onRecentClipDetected = { clip ->
+                    // Fallback: if SSE was missed but a fresh clip appeared, show the alert.
+                    val syntheticId = "clip-fallback-${clip.id}"
+                    if (syntheticId != lastShownAlertId) {
+                        activeMotionAlert = com.example.esp32pairingapp.alerts.MotionAlertInfo(
+                            id          = syntheticId,
+                            deviceId    = clip.deviceId,
+                            createdAtMs = System.currentTimeMillis(),
+                        )
+                        lastShownAlertId = syntheticId
+                        showMotionNotification(context, clip.deviceId)
+                    }
+                }
             )
 
             // ── Motion Sensors section ──────────────────────────────────────
