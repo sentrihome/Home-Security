@@ -381,6 +381,55 @@ app.get("/api/clips/:eventId/thumbnail", async (req, res) => {
    Motion alerts (Pi → Cloud → App)
 ========================= */
 
+// SSE clients waiting for motion events.
+// Each entry is an Express response object with SSE headers already sent.
+const sseClients = new Set();
+
+/**
+ * Push a motion alert to every connected SSE client immediately.
+ * Called from POST /api/motion and POST /api/motion/test.
+ */
+function broadcastMotionAlert(alert) {
+  const payload = JSON.stringify({
+    id:          alert._id,
+    deviceId:    alert.deviceId,
+    eventId:     alert.eventId  ?? null,
+    createdAt:   alert.createdAt,
+    createdAtMs: alert.createdAt.getTime(),
+  });
+  for (const client of sseClients) {
+    try { client.write(`data: ${payload}\n\n`); } catch (_) {}
+  }
+  console.log(`📡 SSE broadcast to ${sseClients.size} client(s): alert ${alert._id}`);
+}
+
+/**
+ * GET /api/motion/stream
+ * Server-Sent Events stream — app connects once and receives alerts instantly.
+ * Sends a heartbeat comment every 20 s to stay alive through ngrok's idle timeout.
+ */
+app.get("/api/motion/stream", (req, res) => {
+  res.setHeader("Content-Type",  "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection",    "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // disable nginx / ngrok buffering
+  res.flushHeaders();
+
+  // Heartbeat to prevent ngrok/proxy from closing the idle connection
+  const heartbeat = setInterval(() => {
+    try { res.write(":\n\n"); } catch (_) {}
+  }, 20_000);
+
+  sseClients.add(res);
+  console.log(`🔌 SSE client connected (total: ${sseClients.size})`);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+    console.log(`🔌 SSE client disconnected (total: ${sseClients.size})`);
+  });
+});
+
 /**
  * POST /api/motion
  * Called by the Pi when hardware motion is detected.
@@ -400,6 +449,7 @@ app.post("/api/motion", async (req, res) => {
 
   const alert = await MotionAlert.create({ deviceId, ownerEmail, eventId });
   console.log(`🚨 Motion alert created: ${alert._id} (device: ${deviceId}, owner: ${ownerEmail})`);
+  broadcastMotionAlert(alert);
   res.json({ status: "ok", alertId: alert._id });
 });
 
@@ -447,6 +497,7 @@ app.post("/api/motion/test", async (_req, res) => {
     eventId:    null,
   });
   console.log(`🧪 Test motion alert created: ${alert._id}`);
+  broadcastMotionAlert(alert);
   res.json({ status: "ok", alertId: alert._id });
 });
 

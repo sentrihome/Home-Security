@@ -43,6 +43,7 @@ object ApiConfig {
         const val NEW_PASS = "/api/newpass"
         const val WIFI_STATUS = "/api/wifistatus"
         const val MOTION_LATEST = "/api/motion/latest"
+        const val MOTION_STREAM = "/api/motion/stream"
         const val MOTION_ACKNOWLEDGE = "/api/motion"  // + "/{id}/acknowledge"
         const val MOTION_TEST = "/api/motion/test"
     }
@@ -101,8 +102,11 @@ object ApiConfig {
     fun buildCloudUrl(endpoint: String) = "${cloudBaseUrl()}$endpoint"
     fun buildPiUrl(endpoint: String) = "${piBaseUrl()}$endpoint"
 
-    /** GET /api/motion/latest — poll for newest unacknowledged motion alert */
+    /** GET /api/motion/latest — poll for newest unacknowledged motion alert (fallback) */
     fun getLatestMotionAlertUrl() = "${cloudBaseUrl()}${CloudEndpoints.MOTION_LATEST}"
+
+    /** GET /api/motion/stream — SSE stream for instant push alerts */
+    fun getMotionStreamUrl() = "${cloudBaseUrl()}${CloudEndpoints.MOTION_STREAM}"
 
     /** POST /api/motion/{alertId}/acknowledge */
     fun getAcknowledgeMotionUrl(alertId: String) =

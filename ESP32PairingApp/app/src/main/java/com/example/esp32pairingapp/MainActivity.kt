@@ -310,33 +310,58 @@ fun StreamPage(
         }
     }
 
-    // Motion alert polling — every 15 s (no auth token needed)
+    // SSE connection for instant motion alerts — reconnects automatically on drop.
+    // Falls back to a 15 s poll if SSE fails repeatedly.
     LaunchedEffect(Unit) {
+        var backoffMs = 2_000L
         while (true) {
+            var connected = false
             try {
-                val resp = withContext(Dispatchers.IO) {
-                    httpClient.get(
-                        com.example.esp32pairingapp.network.ApiConfig.getLatestMotionAlertUrl(),
-                        null
+                withContext(Dispatchers.IO) {
+                    val url = java.net.URL(
+                        com.example.esp32pairingapp.network.ApiConfig.getMotionStreamUrl()
                     )
-                }
-                val json = org.json.JSONObject(resp)
-                val alertObj = json.optJSONObject("alert")
-                if (alertObj != null) {
-                    val alertId = alertObj.getString("id")
-                    if (alertId != lastShownAlertId) {
-                        val newAlert = MotionAlertInfo(
-                            id          = alertId,
-                            deviceId    = alertObj.optString("deviceId", "unknown"),
-                            createdAtMs = alertObj.optLong("createdAtMs", System.currentTimeMillis()),
-                        )
-                        activeMotionAlert = newAlert
-                        lastShownAlertId  = alertId
-                        showMotionNotification(context, newAlert.deviceId)
+                    val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                        setRequestProperty("Accept", "text/event-stream")
+                        setRequestProperty("Cache-Control", "no-cache")
+                        setRequestProperty("ngrok-skip-browser-warning", "true")
+                        connectTimeout = 10_000
+                        readTimeout    = 0          // infinite — SSE is a long-lived stream
+                    }
+                    conn.connect()
+                    connected = true
+                    backoffMs = 2_000L              // reset on successful connect
+
+                    conn.inputStream.bufferedReader().use { reader ->
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            val l = line ?: continue
+                            // SSE heartbeat comments start with ':' — ignore them
+                            if (!l.startsWith("data:")) continue
+                            val jsonStr = l.removePrefix("data:").trim()
+                            if (jsonStr.isEmpty()) continue
+                            val json = org.json.JSONObject(jsonStr)
+                            val alertId = json.optString("id")
+                            if (alertId.isNotBlank() && alertId != lastShownAlertId) {
+                                val newAlert = MotionAlertInfo(
+                                    id          = alertId,
+                                    deviceId    = json.optString("deviceId", "unknown"),
+                                    createdAtMs = json.optLong("createdAtMs", System.currentTimeMillis()),
+                                )
+                                withContext(Dispatchers.Main) {
+                                    activeMotionAlert = newAlert
+                                    lastShownAlertId  = alertId
+                                    showMotionNotification(context, newAlert.deviceId)
+                                }
+                            }
+                        }
                     }
                 }
-            } catch (_: Exception) { /* silent — network may be offline */ }
-            delay(15_000)
+            } catch (_: Exception) { /* connection dropped — will reconnect below */ }
+
+            // Exponential backoff; cap at 30 s
+            delay(backoffMs)
+            if (connected) backoffMs = 2_000L else backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
         }
     }
 
