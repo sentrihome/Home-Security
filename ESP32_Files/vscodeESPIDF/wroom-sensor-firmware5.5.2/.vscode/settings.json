@@ -6,7 +6,7 @@
     "interface/ftdi/esp32_devkitj_v1.cfg",
     "target/esp32.cfg"
   ],
-  "idf.port": "/dev/tty.usbserial-10",
+  "idf.port": "/dev/tty.usbserial-110",
   "idf.toolsPath": "/Users/anuragkoushik/.espressif",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"
