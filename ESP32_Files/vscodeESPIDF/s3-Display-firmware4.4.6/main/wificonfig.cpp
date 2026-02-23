@@ -1,5 +1,6 @@
 #include "wificonfig.h"
 
+
 const char* DEVICE_NAME = "ESP_DISPLAY";
 const char* targetIP = "192.168.10.2"; 
 const int udpPort = 5005;
@@ -20,6 +21,7 @@ void wifi_send(const char* message) {
         udp.endPacket();
       }
     }
+    
 
     Serial.println("Sent message");
   }
@@ -42,10 +44,17 @@ void wifi_receive(void) {
   // Robust command match (ignores trailing junk)
   if (strncmp(buf, "INTRUDER INTRUDER", 16) == 0) {
 
-    udp.beginPacket("192.168.1.74", 5005);
+    udp.beginPacket("192.168.0.202", 5005);
     udp.print("INTRUDER INTRUDER\n");
     udp.endPacket();
+    myServo.write(0);    // 0°
+    delay(350);
+    myServo.write(180);   // 90°
+    delay(350);
+    myServo.write(0);  // 180°
+    delay(350);
   }
+
 }
 
 bool wifiapstart(){
@@ -56,7 +65,7 @@ bool wifiapstart(){
 
   const int maxTries = 3;
   for (int i = 0; i < maxTries; i++) {
-    if (WiFi.softAP("ESP32_Master_Config", "12345678", 11)) {
+    if (WiFi.softAP("ESP32_Master_Config","", 11)) {
       // Wait until AP actually has an IP (ready to serve)
       unsigned long start = millis();
       while (WiFi.softAPIP()[0] == 0 && (millis() - start < 5000)) {

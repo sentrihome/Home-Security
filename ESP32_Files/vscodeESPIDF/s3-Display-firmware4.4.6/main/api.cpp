@@ -34,10 +34,23 @@ void apichangedpass(){
     String encryptedpass = server.arg("pass");
     Serial.println("Encrypted pass: " + encryptedpass);
     server.send(200, "text/plain", "OK");
+    WiFi.softAP("ESP32_Master_Config", encryptedpass, 11);
+    delay(500);
+
 }
 
 void apionetimepass(){
     String otprec = server.arg("otp");
+    HTTPClient http;
+    for (int i = 0; i < idscount; i++) {
+        if (IDS[i].length() > 0) {
+            String url = "http://" + IDS[i] + "/api/onetimepass";
+            http.begin(url);
+            http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+            http.POST("otp=" + otprec); 
+            http.end();
+        }
+    }
     Serial.println("OTP Received: " + otprec);
     server.send(200, "text/plain", "OK");
 }
@@ -69,8 +82,30 @@ void apimodule(){
 void apischedule(){
     String armstart = server.arg("start");
     String armstop = server.arg("stop");
-    Serial.print("Scheduling time starts at " + armstart + "and stops at " + armstop);
+    Serial.print("Scheduling time starts at " + armstart + " and stops at " + armstop);
     //times saved and actions taked elsewhere
+    server.send(200, "text/plain", "OK");
+}
+
+String permanentpassrec;
+void apipermanentpass(){
+    permanentpassrec = server.arg("pass");
+    Serial.println(permanentpassrec);
+    HTTPClient http;
+    for (int i = 0; i < idscount; i++){
+        if (IDS[i].length() > 0) {
+            String url = IDS[i];
+            http.begin("http://" + url + "/api/permanentpass");
+            http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+            http.POST("pass=" + permanentpassrec);
+            http.end();
+        }
+    }
+    server.send(200, "text/plain", "OK");
+}
+
+void apigetpermanentpass(){
+    server.send(200, "text/plain", "pass=" + permanentpassrec);
 }
 
 void apihandle(){
@@ -83,4 +118,8 @@ void apihandle(){
     server.on("/api/setmasterip", HTTP_POST, apisetmasterip);
     server.on("/api/onetimepass", HTTP_POST, apionetimepass);
     server.on("/api/module", HTTP_POST, apimodule);
+    server.on("/api/schedule", HTTP_POST, apischedule);
+    server.on("/api/permanentpass", HTTP_POST, apipermanentpass);
+    server.on("/api/getpermanentpass", HTTP_GET, apigetpermanentpass);
+    
 }

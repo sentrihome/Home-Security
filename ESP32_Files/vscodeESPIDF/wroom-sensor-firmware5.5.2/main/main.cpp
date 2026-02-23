@@ -1,10 +1,11 @@
 #include "driver/gptimer.h"
 #include "driver/gpio.h"
+#include "keypad.h"
 #include <stdbool.h>
 #include "api.h"
+#include "esp_system.h"
 //////////////////////////////////////////////////////////////////////
-#include <WiFi.h>
-#include <WiFiUdp.h>
+
 //////////////////////////////////////////////////////////////////////
 
 #define ECHO 16
@@ -12,7 +13,7 @@
 
 //////////////////////////////////wifisetup/////////////////////////////////////
 const char* ssid = "ESP32_Master_Config";
-const char* password = "12345678";
+String password = littlefsReadFile("/wifipass.txt");
 
 const char* DEVICE_NAME = "ESP_MOTION";   // <-- change to ESP_B on the other board
 String ipgiven = WiFi.localIP().toString();
@@ -32,6 +33,7 @@ float lastDistance = 0;
 float nowDistance = 0;
 int motiononflag = 0;
 
+bool setupdone = false;
 
 /////////////////////////////// TIMER INIT. /////////////////////////////////////////////
 gptimer_handle_t gptimer = nullptr;
@@ -74,6 +76,8 @@ void IRAM_ATTR echo()
 
 void setup() {
   Serial.begin(115200);
+  littlefsinit();
+  keypadinit();
   init_timer();
   //////////////////////////////// SETTING ECHO GPIO ////////////////////////////////////////////
   pinMode(ECHO, INPUT_PULLUP);
@@ -83,14 +87,38 @@ void setup() {
   ///////////////////////////////////////////////////////////////////////////////////////////////
   pinMode(TRIG, OUTPUT);
   //////////////////////////////////wifisetup////////////////////////////////////////////////////
+  
+  WiFi.mode(WIFI_AP_STA);
+  IPAddress apIP(192,168,10,1);
+  IPAddress gateway(192,168,10,1);
+  IPAddress subnet(255,255,255,0);
+  WiFi.softAPConfig(apIP, gateway, subnet);
+  WiFi.softAP("ESPMODULE", "", 11);
+  delay(500);
+  if (WiFi.softAPIP()[0] != 0) {
+        Serial.printf("AP started, IP: %s\n", WiFi.softAPIP().toString().c_str());
+  }
+  apirouting();
+  server.begin();
   WiFi.begin(ssid, password);
   Serial.print("Connecting");
   while (WiFi.status() != WL_CONNECTED) {
+    server.handleClient();
     Serial.print(".");
     delay(400);
   }
-
+  
+  
   sendalert("alert=" + WiFi.localIP().toString());
+  HTTPClient http;
+  http.begin("http://192.168.10.1/api/getpermanentpass");
+  if (http.GET() == HTTP_CODE_OK) {
+    String response = http.getString();
+    if (response.startsWith("pass=")) {
+      setpassword = response.substring(5);
+    }
+  }
+  http.end();
   Serial.println("\nConnected!");
   Serial.print("My IP: ");
   Serial.println(WiFi.localIP());
@@ -102,6 +130,8 @@ void setup() {
 
 void loop() {
   //measurementFlag = false;
+  server.handleClient();
+  keypadpress();
   digitalWrite(TRIG, HIGH);
   delayMicroseconds(10);
   digitalWrite(TRIG, LOW);
@@ -147,7 +177,7 @@ void loop() {
     if(lastDistance - nowDistance > 10){
       int count = 0;
       while(count < 2){
-        Serial.printf("FUCK U FUCK U FUCK U\n");
+        Serial.printf("intruder detected\n");
         if (count == 0){
           // const char* targetIP   = "192.168.1.69"; //to safirs mac
           // const int   udpPort    = 5005;
@@ -187,4 +217,9 @@ void loop() {
   }
   /////////////////////////////mode select////////////////////////////////////////////
 
+  if ((WiFi.status() == WL_DISCONNECTED || WiFi.status() == WL_CONNECTION_LOST) && setupdone == true) {
+    Serial.println("No Connection");
+    delay(5000);
+    esp_restart();
+  }
 }
