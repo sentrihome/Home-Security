@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WebRTC Offer JSON</title>
+</head>
+<body>
+  <h1>Offer JSON</h1>
+  <button id="makeOffer">Create Offer</button>
+  <pre id="output"></pre>
+  <video id="remoteVideo" autoplay playsinline></video>
+
+  <script>
+    const output = document.getElementById("output");
+    const button = document.getElementById("makeOffer");
+
+    button.addEventListener("click", async () => {
+      let sessionId = null;
+      const pendingCandidates = [];
+
+      try {
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            {
+              urls: [
+                "stun:stun.cloudflare.com:3478",
+                "turn:turn.cloudflare.com:3478?transport=udp",
+                "turn:turn.cloudflare.com:3478?transport=tcp",
+                "turns:turn.cloudflare.com:5349?transport=tcp"
+              ],
+              username: "g08d0b8648e113b95b50f07e3670941c00dbca7e3a1d777a07b07f7d177041b1",
+              credential: "c2a0d2023d9209a5ec0a1d9b784611d933c1dcc6c98b5a328ea157f25dee498d"
+            }
+          ]
+        });
+
+        pc.ontrack = (event) => {
+          document.getElementById("remoteVideo").srcObject = event.streams[0];
+        };
+
+        function sendCandidate(candidate, sdpMid, sdpMLineIndex) {
+          if (!sessionId) {
+            pendingCandidates.push({ candidate, sdpMid, sdpMLineIndex });
+            return;
+          }
+
+          const body = { sessionId, candidate, sdpMid, sdpMLineIndex };
+
+          fetch("/ice-candidate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          }).catch(() => {
+            // fire-and-forget; ignore network errors here
+          });
+        }
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            sendCandidate(
+              event.candidate.candidate,
+              event.candidate.sdpMid,
+              event.candidate.sdpMLineIndex
+            );
+          } else {
+            // ICE gathering complete for the browser
+            sendCandidate(null, null, null);
+          }
+        };
+
+        pc.addTransceiver("video", { direction: "recvonly" });
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        const offerJson = {
+          sdp: pc.localDescription.sdp,
+          type: pc.localDescription.type,
+        };
+
+        const response = await fetch("/offer", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(offerJson),
+        });
+
+        const answerJson = await response.json();
+        sessionId = answerJson.sessionId || null;
+
+        await pc.setRemoteDescription({
+          type: answerJson.type,
+          sdp: answerJson.sdp,
+        });
+
+        // Flush any candidates generated before we had a sessionId.
+        for (const { candidate, sdpMid, sdpMLineIndex } of pendingCandidates) {
+          const body = { sessionId, candidate, sdpMid, sdpMLineIndex };
+          await fetch("/ice-candidate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+        }
+
+        output.textContent = JSON.stringify(answerJson, null, 2);
+      } catch (err) {
+        output.textContent = "Error: " + err;
+      }
+    });
+  </script>
+</body>
+</html>
