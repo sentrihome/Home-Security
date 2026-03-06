@@ -9,10 +9,8 @@ from aiortc import (
     VideoStreamTrack,
     RTCConfiguration,
     RTCIceServer,
-    RTCIceCandidate,
 )
 import asyncio
-import uuid
 import av
 from cam import cameraoutput
 
@@ -33,58 +31,10 @@ ICE_SERVERS = [
 ]
 RTC_CONFIG = RTCConfiguration(iceServers=ICE_SERVERS)
 
-# Session store for trickle ICE: session_id -> RTCPeerConnection
-sessions: dict[str, RTCPeerConnection] = {}
-
 
 class requestdata(BaseModel):
     sdp: str
     type: str
-
-
-class IceCandidateData(BaseModel):
-    sessionId: str
-    candidate: str | None = None
-    sdpMid: str | None = None
-    sdpMLineIndex: int | None = None
-
-
-def _parse_ice_candidate(candidate_str: str) -> RTCIceCandidate | None:
-    """
-    Parse a browser ICE candidate string into an RTCIceCandidate.
-    Expects a string starting with 'candidate:'.
-    """
-    if not candidate_str:
-        return None
-
-    line = candidate_str.strip()
-    if not line.startswith("candidate:"):
-        return None
-
-    parts = line.replace("candidate:", "", 1).split()
-    # candidate:<foundation> <component> <protocol> <priority> <ip> <port> typ <type> ...
-    if len(parts) < 8:
-        return None
-
-    foundation = parts[0]
-    component = int(parts[1])
-    protocol = parts[2]
-    priority = int(parts[3])
-    ip = parts[4]
-    port = int(parts[5])
-    cand_type = parts[7]
-
-    return RTCIceCandidate(
-        foundation=foundation,
-        component=component,
-        protocol=protocol,
-        priority=priority,
-        ip=ip,
-        port=port,
-        type=cand_type,
-        sdpMid=None,
-        sdpMLineIndex=None,
-    )
 
 
 api.add_middleware(
@@ -147,37 +97,7 @@ async def rtcoffer(receiveddata: requestdata):
         finally:
             rtc.remove_listener("icegatheringstatechange", on_gathering_state_change)
 
-    session_id = str(uuid.uuid4())
-    sessions[session_id] = rtc
-
     return {
         "sdp": rtc.localDescription.sdp,
         "type": rtc.localDescription.type,
-        "sessionId": session_id,
     }
-
-
-@api.post("/ice-candidate")
-async def add_ice_candidate(data: IceCandidateData):
-    rtc = sessions.get(data.sessionId)
-    if not rtc:
-        return {"ok": False, "error": "unknown session"}
-
-    if data.candidate is None:
-        # Signal end-of-candidates.
-        await rtc.addIceCandidate(None)
-        return {"ok": True}
-
-    parsed = _parse_ice_candidate(data.candidate)
-    if parsed is None:
-        return {"ok": False, "error": "invalid candidate"}
-
-    parsed.sdpMid = data.sdpMid
-    parsed.sdpMLineIndex = data.sdpMLineIndex
-
-    try:
-        await rtc.addIceCandidate(parsed)
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": str(exc)}
-
-    return {"ok": True}

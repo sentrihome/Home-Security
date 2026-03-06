@@ -16,9 +16,6 @@
     const button = document.getElementById("makeOffer");
 
     button.addEventListener("click", async () => {
-      let sessionId = null;
-      const pendingCandidates = [];
-
       try {
         const pc = new RTCPeerConnection({
           iceServers: [
@@ -39,40 +36,25 @@
           document.getElementById("remoteVideo").srcObject = event.streams[0];
         };
 
-        function sendCandidate(candidate, sdpMid, sdpMLineIndex) {
-          if (!sessionId) {
-            pendingCandidates.push({ candidate, sdpMid, sdpMLineIndex });
-            return;
-          }
-
-          const body = { sessionId, candidate, sdpMid, sdpMLineIndex };
-
-          fetch("/ice-candidate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          }).catch(() => {
-            // fire-and-forget; ignore network errors here
-          });
-        }
-
-        pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            sendCandidate(
-              event.candidate.candidate,
-              event.candidate.sdpMid,
-              event.candidate.sdpMLineIndex
-            );
-          } else {
-            // ICE gathering complete for the browser
-            sendCandidate(null, null, null);
-          }
-        };
-
         pc.addTransceiver("video", { direction: "recvonly" });
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
+
+        // Wait for client ICE gathering to complete so the offer SDP
+        // contains all candidates; server gets them via setRemoteDescription(offer).
+        if (pc.iceGatheringState !== "complete") {
+          await new Promise((resolve) => {
+            const check = () => {
+              if (pc.iceGatheringState === "complete") {
+                pc.removeEventListener("icegatheringstatechange", check);
+                resolve();
+              }
+            };
+            pc.addEventListener("icegatheringstatechange", check);
+            if (pc.iceGatheringState === "complete") resolve();
+          });
+        }
 
         const offerJson = {
           sdp: pc.localDescription.sdp,
@@ -88,22 +70,11 @@
         });
 
         const answerJson = await response.json();
-        sessionId = answerJson.sessionId || null;
 
         await pc.setRemoteDescription({
           type: answerJson.type,
           sdp: answerJson.sdp,
         });
-
-        // Flush any candidates generated before we had a sessionId.
-        for (const { candidate, sdpMid, sdpMLineIndex } of pendingCandidates) {
-          const body = { sessionId, candidate, sdpMid, sdpMLineIndex };
-          await fetch("/ice-candidate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
-        }
 
         output.textContent = JSON.stringify(answerJson, null, 2);
       } catch (err) {
