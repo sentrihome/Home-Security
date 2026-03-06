@@ -13,6 +13,7 @@ from aiortc import (
 import asyncio
 import av
 from cam import cameraoutput
+import recording
 
 
 api = FastAPI()
@@ -74,8 +75,6 @@ async def rtcoffer(receiveddata: requestdata):
     answer = await rtc.createAnswer()
     await rtc.setLocalDescription(answer)
 
-    # Wait for ICE gathering to complete so that relay candidates
-    # (including TURN) are included in the SDP we return.
     if rtc.iceGatheringState != "complete":
         loop = asyncio.get_event_loop()
         gathering_done: asyncio.Future[None] = loop.create_future()
@@ -87,12 +86,9 @@ async def rtcoffer(receiveddata: requestdata):
         rtc.on("icegatheringstatechange", on_gathering_state_change)
 
         try:
-            # If it completed between the check and handler registration,
-            # skip waiting; otherwise, wait up to 10 seconds.
             if rtc.iceGatheringState != "complete":
                 await asyncio.wait_for(gathering_done, timeout=10.0)
         except asyncio.TimeoutError:
-            # If gathering takes too long, return whatever candidates we have.
             pass
         finally:
             rtc.remove_listener("icegatheringstatechange", on_gathering_state_change)
@@ -101,3 +97,21 @@ async def rtcoffer(receiveddata: requestdata):
         "sdp": rtc.localDescription.sdp,
         "type": rtc.localDescription.type,
     }
+
+class triggerstuff(BaseModel):
+    intruder: bool
+
+required = 0
+
+@api.post("/trigger")
+def trigger(data: triggerstuff):
+    global required
+    intruder = data.intruder
+    if intruder:
+        current = recording.savecount
+        print(current)
+        required = current + 5
+        print(required)
+        return {
+            "received": "ok"
+        }

@@ -1,10 +1,17 @@
 import cv2
+import threading
 
 cap = cv2.VideoCapture(0)
-fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-save = cv2.VideoWriter("save.mp4", fourcc, 30, (1920, 1080))
-def cameraoutput():
+
+framewrite = None
+
+def cameraread():
+    while True:
+        global framewrite
+        ret, frame = cap.read()
+        framewrite = frame
     
-    ret, frame = cap.read()
-    save.write(frame)
-    return frame
+def cameraoutput():
+    return framewrite
+
+threading.Thread(target=cameraread, daemon=True).start()
