@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Home Security Setup</title>
+  <style>
+    body { font-family: sans-serif; max-width: 560px; margin: 24px auto; padding: 0 12px; }
+    .screen { display: none; border: 1px solid #ddd; border-radius: 10px; padding: 16px; }
+    .active { display: block; }
+    h2 { margin-top: 0; }
+    button { margin: 6px 6px 0 0; padding: 8px 12px; cursor: pointer; }
+    label { display: block; margin-top: 10px; }
+    input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
+    .muted { color: #666; font-size: 0.95rem; }
+    pre { background: #f6f6f6; padding: 10px; border-radius: 6px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+
+  <!-- Welcome -->
+  <section id="welcome" class="screen active">
+    <h2>Welcome</h2>
+    <p class="muted">Continuing in <span id="countdown">5</span> seconds...</p>
+    <button id="welcomeContinue">Continue now</button>
+  </section>
+
+  <!-- Main Menu -->
+  <section id="menu" class="screen">
+    <h2>Main Menu</h2>
+    <p>Select an option:</p>
+    <button id="opt1">1. Setup New Device</button>
+    <button id="opt2">2. Setup New Module</button>
+    <button id="opt3">3. Update Firmware</button>
+  </section>
+
+  <!-- Option 1: Connect Prompt -->
+  <section id="setupConnect" class="screen">
+    <h2>Setup New Device</h2>
+    <p><strong>Connect to wifi ssid and pass</strong></p>
+    <p>Connected? y/n:</p>
+    <button id="connectedYes">y</button>
+    <button id="connectedNo">n</button>
+    <p id="connectMsg" class="muted"></p>
+    <button id="connectBack">Back to menu</button>
+  </section>
+
+  <!-- Option 1: Credentials Form -->
+  <section id="setupForm" class="screen">
+    <h2>Setup New Device</h2>
+    <p>Ok, proceeding</p>
+
+    <label>Enter Home Wifi SSID:
+      <input id="ssid" type="text" />
+    </label>
+
+    <label>Enter Home Wifi Password:
+      <input id="pass" type="password" />
+    </label>
+
+    <label>Enter Disarm Pass:
+      <input id="disarm" type="password" />
+    </label>
+
+    <button id="submitSetup">Submit</button>
+    <button id="formBack">Back</button>
+  </section>
+
+  <!-- Option 2 Placeholder -->
+  <section id="moduleScreen" class="screen">
+    <h2>Setup New Module</h2>
+    <p>Not implemented yet.</p>
+    <button class="backMenu">Back to menu</button>
+  </section>
+
+  <!-- Option 3 Placeholder -->
+  <section id="firmwareScreen" class="screen">
+    <h2>Update Firmware</h2>
+    <p>Not implemented yet.</p>
+    <button class="backMenu">Back to menu</button>
+  </section>
+
+  <!-- Result -->
+  <section id="resultScreen" class="screen">
+    <h2>Result</h2>
+    <pre id="resultText">Idle</pre>
+    <button id="resultBack">Back to menu</button>
+  </section>
+
+  <script>
+    const screens = [
+      "welcome",
+      "menu",
+      "setupConnect",
+      "setupForm",
+      "moduleScreen",
+      "firmwareScreen",
+      "resultScreen",
+    ];
+
+    function show(id) {
+      for (const s of screens) {
+        document.getElementById(s).classList.toggle("active", s === id);
+      }
+    }
+
+    // Welcome -> menu after 5 seconds (or manual continue)
+    let remaining = 5;
+    const countdownEl = document.getElementById("countdown");
+    const timer = setInterval(() => {
+      remaining -= 1;
+      countdownEl.textContent = String(remaining);
+      if (remaining <= 0) {
+        clearInterval(timer);
+        show("menu");
+      }
+    }, 1000);
+
+    document.getElementById("welcomeContinue").addEventListener("click", () => {
+      clearInterval(timer);
+      show("menu");
+    });
+
+    // Main menu options
+    document.getElementById("opt1").addEventListener("click", () => {
+      document.getElementById("connectMsg").textContent = "";
+      show("setupConnect");
+    });
+
+    document.getElementById("opt2").addEventListener("click", () => show("moduleScreen"));
+    document.getElementById("opt3").addEventListener("click", () => show("firmwareScreen"));
+
+    // Setup flow: Connected? y/n
+    document.getElementById("connectedYes").addEventListener("click", () => {
+      show("setupForm");
+    });
+
+    document.getElementById("connectedNo").addEventListener("click", () => {
+      document.getElementById("connectMsg").textContent =
+        "Please connect first, then choose y.";
+    });
+
+    document.getElementById("connectBack").addEventListener("click", () => show("menu"));
+    document.getElementById("formBack").addEventListener("click", () => show("setupConnect"));
+
+    // Submit setup -> exact body string -> POST
+    document.getElementById("submitSetup").addEventListener("click", async () => {
+      const homewifissid = document.getElementById("ssid").value.trim();
+      const homewifipass = document.getElementById("pass").value.trim();
+      const disarmpass = document.getElementById("disarm").value.trim();
+      const resultText = document.getElementById("resultText");
+
+      if (!homewifissid || !homewifipass || !disarmpass) {
+        resultText.textContent = "Please fill all fields.";
+        show("resultScreen");
+        return;
+      }
+
+      // Exact format from your Python line:
+      // SSID=<ssid>&pass=<password>&disarmpass=<disarmpass>
+      const body = `SSID=${homewifissid}&pass=${homewifipass}&disarmpass=${disarmpass}`;
+
+      try {
+        const resp = await fetch("http://192.168.10.1/api/setup", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body
+        });
+
+        const text = await resp.text();
+        resultText.textContent =
+          `Posted body:\n${body}\n\nStatus: ${resp.status}\n\nResponse:\n${text}`;
+      } catch (err) {
+        resultText.textContent = `Posted body:\n${body}\n\nRequest failed:\n${err}`;
+      }
+
+      // Reset inputs and go to result, then back to menu
+      document.getElementById("ssid").value = "";
+      document.getElementById("pass").value = "";
+      document.getElementById("disarm").value = "";
+
+      show("resultScreen");
+    });
+
+    document.getElementById("resultBack").addEventListener("click", () => show("menu"));
+
+    for (const btn of document.querySelectorAll(".backMenu")) {
+      btn.addEventListener("click", () => show("menu"));
+    }
+  </script>
+</body>
+</html>
