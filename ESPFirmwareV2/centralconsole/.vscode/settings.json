@@ -1,0 +1,6 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.espIdfPath": "/Users/anuragkoushik/Desktop/Deployment/Home-Security/ESPFirmwareV2/centralconsole/esp-idf",
+  "idf.toolsPath": "/Users/anuragkoushik/.espressif",
+  "idf.pythonInstallPath": "/opt/homebrew/opt/python@3.11/libexec/bin/python"
+}
