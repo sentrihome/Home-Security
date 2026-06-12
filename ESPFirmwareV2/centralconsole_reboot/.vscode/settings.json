@@ -4,7 +4,7 @@
   "idf.openOcdConfigs": [
     "board/esp32s3-builtin.cfg"
   ],
-  "idf.port": "/dev/tty.usbmodem101",
+  "idf.port": "/dev/tty.usbmodem5A4E1321371",
   "idf.currentSetup": "/Users/anuragkoushik/.espressif/v5.5.2/esp-idf",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
@@ -15,5 +15,5 @@
     "--query-driver=**",
     "--compile-commands-dir=/Users/anuragkoushik/Desktop/Deployment/Home-Security/ESPFirmwareV2/centralconsole_reboot/build"
   ],
-  "idf.flashType": "JTAG"
+  "idf.flashType": "UART"
 }
