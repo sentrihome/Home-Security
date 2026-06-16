@@ -1,9 +1,5 @@
-#ifndef UIELEMENTS_H
-#define UIELEMENTS_H
-
+#pragma once
 #include <stdint.h>
 
-extern const uint8_t uidashboard[];
+extern const uint8_t uiidle[];
 extern const uint8_t uiarmed[];
-
-#endif 

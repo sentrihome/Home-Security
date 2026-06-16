@@ -1,5 +1,5 @@
-#include <Arduino.h>
 #include "display.h"
+
 
 Display display;
 
@@ -10,5 +10,6 @@ void setup(){
 }
 
 void loop(){
-  delay(10);
+  display.process();
+  delay(200);
 }
