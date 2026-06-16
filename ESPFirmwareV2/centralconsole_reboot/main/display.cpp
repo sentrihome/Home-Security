@@ -32,9 +32,30 @@ void Display::idle(){
 }
 
 void Display::armed(){
-
+    tft.pushImage(17, 8, 113, 16, (const uint16_t *) uisysarmed);
+    tft.pushImage(30, 124, 36, 36, (const uint16_t *) uisysarmed2);
+    tft.pushImage(402, 129, 48, 28, (const uint16_t *) uisysarmed3);
 }
 
 void Display::process(){
-    idle();
+    tft.pushImage(0, 0, 480, 320, (const uint16_t *) uiidle);
+    delay(1000);
+    armed();
+    delay(1000);
+    // uint16_t x, y;
+
+    // tft.getTouchRaw(&x, &y);
+    
+    // Serial.printf("x: %i     ", x);
+
+    // Serial.printf("y: %i     ", y);
+
+    // Serial.printf("z: %i \n", tft.getTouchRawZ());
+
+    // delay(250);
 }
+
+// x: 2432     y: 803     z: 2254 
+// x: 2432     y: 368     z: 2295 
+// x: 1982     y: 350     z: 2231 
+// x: 1984     y: 800     z: 2351 

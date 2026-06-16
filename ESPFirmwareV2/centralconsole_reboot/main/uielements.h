@@ -2,4 +2,6 @@
 #include <stdint.h>
 
 extern const uint8_t uiidle[];
-extern const uint8_t uiarmed[];
+extern const uint8_t uisysarmed[];
+extern const uint8_t uisysarmed2[];
+extern const uint8_t uisysarmed3[];
