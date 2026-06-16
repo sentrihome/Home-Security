@@ -20,12 +20,15 @@ void Display::init() {
     delay(2000);
     tft.setSwapBytes(true);
     state = "idle";
+    tft.pushImage(0, 0, 480, 320, (const uint16_t *) uiidle);
 }
 
 void Display::idle(){
     if (state == "idle") {
         log("State idle, sending uiid");
-        tft.pushImage(0, 0, 480, 320, (const uint16_t *) uiidle);
+        tft.pushImage(17, 8, 113, 16, (const uint16_t *) uisysdisarmed);
+        tft.pushImage(30, 124, 36, 36, (const uint16_t *) uisysdisarmed2);
+        tft.pushImage(402, 129, 48, 28, (const uint16_t *) uisysdisarmed3);
         state = "set";
         log("Screening uiidle, state set");
     }
@@ -38,7 +41,9 @@ void Display::armed(){
 }
 
 void Display::process(){
-    tft.pushImage(0, 0, 480, 320, (const uint16_t *) uiidle);
+    tft.pushImage(17, 8, 113, 16, (const uint16_t *) uisysdisarmed);
+    tft.pushImage(30, 124, 36, 36, (const uint16_t *) uisysdisarmed2);
+    tft.pushImage(402, 129, 48, 28, (const uint16_t *) uisysdisarmed3);    
     delay(1000);
     armed();
     delay(1000);
