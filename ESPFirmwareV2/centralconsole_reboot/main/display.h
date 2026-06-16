@@ -8,7 +8,20 @@ public:
     void process();
 
 private:
-    String state;
-    void idle();
+    enum Page {
+        UNARMED,
+        ARMED,
+        SETTINGS
+    };
+    Page state;
+    void unarmed();
     void armed();
+};
+
+class Touch {
+public:
+    void read();
+    void debug();
+    uint16_t x;
+    uint16_t y;
 };
