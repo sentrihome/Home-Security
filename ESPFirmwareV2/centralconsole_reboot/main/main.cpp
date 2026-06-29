@@ -20,7 +20,7 @@ extern "C" void app_main(void) {
   Serial.begin(115200);
   display.init();
   delay(10);
-  wifi_start();
+  wifi_init();
 
   while(true){
     display.process();
