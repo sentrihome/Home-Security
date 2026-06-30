@@ -16,6 +16,9 @@ static void wifi_event_handler(void *event_handler_arg,
         ESP_LOGI(TAG, "Station Started");
         esp_wifi_connect();
     }
+    if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_AP_START)){
+        ESP_LOGI(TAG, "Accesspoint Started");
+    }
     if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_STOP)){
         ESP_LOGI(TAG, "Station Stopped");
     }
@@ -52,7 +55,17 @@ void wifi_init(){
         },
     };
 
+    wifi_config_t accesspoint_configuration = {
+        .ap = {
+            .ssid = "espwifitest",
+            .password = "23012003",
+            .max_connection = 5,
+            .authmode = WIFI_AUTH_WPA2_PSK,
+        }
+    };
+
     esp_wifi_set_config(WIFI_IF_STA, &station_configuration);
+    esp_wifi_set_config(WIFI_IF_AP, &accesspoint_configuration);
     esp_wifi_set_mode(WIFI_MODE_APSTA);
     esp_wifi_start();
 }
