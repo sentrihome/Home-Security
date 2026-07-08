@@ -18,11 +18,11 @@ Display display;
 extern "C" void app_main(void) {
   initArduino();
   Serial.begin(115200);
-  display.init();
   delay(10);
   wifi_init();
-
+  
   while(true){
+    display.init();
     display.process();
     delay(200);
   }

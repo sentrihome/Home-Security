@@ -2,7 +2,7 @@
 #include "esp_event.h"
 #include "esp_event_base.h"
 #include "esp_log.h"
-
+#include "display.h"
 
 
 static const char* TAG = "Wifi";
@@ -15,9 +15,11 @@ static void wifi_event_handler(void *event_handler_arg,
     if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_START)){
         ESP_LOGI(TAG, "Station Started");
         esp_wifi_connect();
+        app_wifi_station_start = true;
     }
     if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_AP_START)){
         ESP_LOGI(TAG, "Accesspoint Started");
+        app_wifi_ap_start = true;
     }
     if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_STOP)){
         ESP_LOGI(TAG, "Station Stopped");
@@ -48,21 +50,15 @@ void wifi_init(){
     wifi_init_config_t wifi_driver_config = WIFI_INIT_CONFIG_DEFAULT();
     esp_wifi_init(&wifi_driver_config);
 
-    wifi_config_t station_configuration = {
-        .sta = {
-            .ssid = "test",
-            .password = "55555555",
-        },
-    };
+    wifi_config_t station_configuration = {};
+    memcpy(station_configuration.sta.ssid, "test", sizeof("test"));
+    memcpy(station_configuration.sta.password, "5555555", sizeof("5555555"));
 
-    wifi_config_t accesspoint_configuration = {
-        .ap = {
-            .ssid = "espwifitest",
-            .password = "23012003",
-            .max_connection = 5,
-            .authmode = WIFI_AUTH_WPA2_PSK,
-        }
-    };
+    wifi_config_t accesspoint_configuration = {};
+    const char* ap_ssid = "espwifi";
+    const char* ap_password = "23012003";
+    memcpy(accesspoint_configuration.ap.ssid, ap_ssid, sizeof(ap_ssid));
+    memcpy(accesspoint_configuration.ap.password, ap_password, sizeof(ap_password));
 
     esp_wifi_set_config(WIFI_IF_STA, &station_configuration);
     esp_wifi_set_config(WIFI_IF_AP, &accesspoint_configuration);

@@ -2,6 +2,9 @@
 #include "Arduino.h"
 #include "core.h"
 
+extern bool app_wifi_station_start;
+extern bool app_wifi_ap_start;
+
 class Display {
 public:
     void init();
