@@ -6,8 +6,12 @@ esp_err_t api_health_resp(httpd_req_t *r) {
 
 esp_err_t api_pass_resp(httpd_req_t *r) {
     char buf[50];
-    httpd_req_recv(r, buf, sizeof(buf));
-    printf(buf);
+    int length = httpd_req_recv(r, buf, sizeof(buf));
+    buf[length] = '\0';
+    printf("buff %s", buf);
+    char extract[50];
+    httpd_query_key_value(buf, "password", extract, sizeof(extract));
+    printf("extracted part %s", extract);
     return httpd_resp_sendstr(r, "{ \"received\": \"ok\" }");
 }
 
