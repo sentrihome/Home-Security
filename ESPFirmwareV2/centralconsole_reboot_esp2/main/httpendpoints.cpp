@@ -14,10 +14,10 @@ esp_err_t api_pass_resp(httpd_req_t *r) {
         return ESP_FAIL;
     }
     buf[length] = '\0';
-    printf("buff %s", buf);
+    printf("buff %s\n", buf);
     char extract[50];
     httpd_query_key_value(buf, "password", extract, sizeof(extract));
-    printf("extracted part %s", extract);
+    printf("extracted part %s\n", extract);
     return httpd_resp_sendstr(r, "{ \"received\": \"ok\" }");
 }
 
