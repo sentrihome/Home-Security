@@ -11,10 +11,8 @@ static bool startup_phase_1 = false;    //Display
 static bool startup_phase_2 = false;    //Wifi
 
 bool app_wifi_station_start = false;
-bool app_wifi_ap_start = false;
 
 static bool display_wifi_station_start = false;
-static bool display_wifi_ap_start = false;
 
 static bool init_done = false;
 
@@ -37,21 +35,15 @@ void Display::init() {
             tft.setTextSize(1);
             tft.print("Wifi station mode started");
             display_wifi_station_start = true;
-        }
-        if (app_wifi_ap_start) {
-            tft.setCursor(0, 20);
-            tft.setTextSize(1);
-            tft.print("Wifi access point mode started");
-            display_wifi_ap_start = true;
-            delay(2000);
+            init_done = true;
         }
     }
-    if (display_wifi_station_start && display_wifi_ap_start && !init_done) {
+    if (display_wifi_station_start && init_done) {
         tft.setSwapBytes(true);
         state = UNARMED;
         tft.pushImage(0, 0, 480, 320, (const uint16_t *) uiidle);
         startup_phase_2 = true;
-        init_done = true;
+        init_done = false;
     }
 }
 
