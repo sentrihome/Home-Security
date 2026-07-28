@@ -52,8 +52,8 @@ void wifi_init(){
     esp_wifi_init(&wifi_driver_config);
 
     wifi_config_t station_configuration = {};
-    memcpy(station_configuration.sta.ssid, "test", sizeof("test"));
-    memcpy(station_configuration.sta.password, "5555555", sizeof("5555555"));
+    memcpy(station_configuration.sta.ssid, "espwifi", sizeof("espwifi"));
+    memcpy(station_configuration.sta.password, "23012003", sizeof("23012003"));
 
     // wifi_config_t accesspoint_configuration = {};
     // const char* ap_ssid = "espwifi";

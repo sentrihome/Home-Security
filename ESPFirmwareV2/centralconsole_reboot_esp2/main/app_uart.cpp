@@ -24,7 +24,7 @@ void uart_init() {
     uart_param_config(UART_NUM_1, &uartconf);
 
     //uart_set_pin(uart_port_t uart_num, int tx_io_num, int rx_io_num, int rts_io_num, int cts_io_num);
-    uart_set_pin(UART_NUM_1, 18, 17, 4, 5);
+    uart_set_pin(UART_NUM_1, 17, 18, 4, 5);
     printf("Uart initialized, UART baud rate: ");
     uint32_t baudrate_print = 0;
     uart_get_baudrate(UART_NUM_1, &baudrate_print);

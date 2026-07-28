@@ -30,3 +30,10 @@ void uart_init() {
     uart_get_baudrate(UART_NUM_1, &baudrate_print);
     printf("%lu\n", baudrate_print);
 }
+
+unsigned char uart_message[200];
+
+void uart_receive(){
+    uart_read_bytes(UART_NUM_1, uart_message, sizeof(uart_message), 100);
+    printf("%s", uart_message);
+}

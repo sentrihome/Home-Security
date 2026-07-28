@@ -7,13 +7,12 @@
 TFT_eSPI tft;
 Touch touch;
 
+bool app_wifi_station_start = false;
+
 static bool startup_phase_1 = false;    //Display
 static bool startup_phase_2 = false;    //Wifi
 
-bool app_wifi_station_start = false;
-
 static bool display_wifi_station_start = false;
-
 static bool init_done = false;
 
 void Display::init() {
@@ -35,14 +34,14 @@ void Display::init() {
             tft.setTextSize(1);
             tft.print("Wifi station mode started");
             display_wifi_station_start = true;
+            startup_phase_2 = true;
             init_done = true;
         }
     }
-    if (display_wifi_station_start && init_done) {
+    if (init_done) {
         tft.setSwapBytes(true);
         state = UNARMED;
         tft.pushImage(0, 0, 480, 320, (const uint16_t *) uiidle);
-        startup_phase_2 = true;
         init_done = false;
     }
 }
