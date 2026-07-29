@@ -40,12 +40,32 @@ systemctl is-enabled dnsmasq.service && systemctl disable dnsmasq.service || tru
 touch /var/log/pi-setup.log
 chmod 644 /var/log/pi-setup.log
 
+# Ensure SoftAP NM profile exists (shows as HomeSecurity-Setup in WiFi menu).
+# Boot script activates it automatically — no manual click required.
+echo "Ensuring SoftAP NetworkManager profile..."
+if ! nmcli -t -f NAME connection show | grep -Fxq "HomeSecurity-Setup"; then
+    if nmcli -t -f NAME connection show | grep -Fxq "Hotspot"; then
+        nmcli connection modify Hotspot connection.id HomeSecurity-Setup || true
+    else
+        nmcli connection add type wifi ifname wlan0 con-name HomeSecurity-Setup \
+            autoconnect no ssid HomeSecurity-Setup || true
+        nmcli connection modify HomeSecurity-Setup \
+            802-11-wireless.mode ap \
+            802-11-wireless.band a \
+            802-11-wireless.channel 36 \
+            ipv4.method shared \
+            wifi-sec.key-mgmt wpa-psk \
+            wifi-sec.psk setup1234 || true
+    fi
+fi
+nmcli connection modify HomeSecurity-Setup connection.autoconnect no 2>/dev/null || true
+
 echo ""
 echo "✓ Installation complete!"
 echo ""
 echo "Next steps:"
 echo "  1. Reboot the Pi: sudo reboot"
-echo "  2. Pi will start in SoftAP mode (HomeSecurity-Setup)"
+echo "  2. Pi will auto-start SoftAP (HomeSecurity-Setup) — no WiFi-menu click needed"
 echo "  3. Connect phone and POST credentials to http://10.42.0.1:4000/wifi"
 echo "  4. Pi will switch to home WiFi automatically"
 echo ""

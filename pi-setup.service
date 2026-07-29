@@ -1,13 +1,17 @@
 [Unit]
 Description=Pi Home Security Setup Service
-After=NetworkManager.service
+After=NetworkManager.service network-online.target
 Wants=NetworkManager.service
 
 [Service]
-Type=forking
+Type=simple
 ExecStart=/home/koushik/pi-setup-boot.sh
-Restart=no
+Restart=on-failure
+RestartSec=5
 User=root
+# When SoftAP mode runs, the boot script execs the Flask API and stays alive.
+# When home WiFi connects, the script exits 0 and the unit is inactive (success).
+SuccessExitStatus=0
 StandardOutput=append:/var/log/pi-setup.log
 StandardError=append:/var/log/pi-setup.log
 

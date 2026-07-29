@@ -117,13 +117,16 @@ sudo systemctl restart pi-setup.service
 
 ### Manual hotspot control
 ```bash
-# Start hotspot
-sudo nmcli connection up Hotspot
+# Start SoftAP (also done automatically by pi-setup.service when unconfigured)
+sudo nmcli connection up HomeSecurity-Setup
 
-# Stop hotspot, return to home WiFi
-sudo nmcli connection down Hotspot
-sudo nmcli connection up Koushik
+# Stop SoftAP, return to home WiFi
+sudo nmcli connection down HomeSecurity-Setup
+sudo nmcli connection up "<your-home-ssid>"
 ```
+
+SoftAP should **start on its own** at boot when `/home/koushik/wifi-credentials.json` is missing.
+You should not need to click **HomeSecurity-Setup** in the WiFi menu — that entry is only the NetworkManager profile.
 
 ### DHCP conflict (dnsmasq)
 Fixed automatically by install script. Verify:

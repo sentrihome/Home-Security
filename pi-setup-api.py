@@ -74,10 +74,16 @@ def set_wifi():
                     'ifname', 'wlan0'
                 ], check=True)
             
-            # Schedule switch to home WiFi (give client time to get response)
+            # Schedule switch to home WiFi (give client time to get response).
+            # SoftAP connection may be named HomeSecurity-Setup or legacy Hotspot.
             subprocess.Popen([
                 'bash', '-c',
-                'sleep 3 && nmcli connection down Hotspot && nmcli connection up "{}"'.format(ssid)
+                (
+                    'sleep 3; '
+                    'nmcli connection down HomeSecurity-Setup 2>/dev/null || '
+                    'nmcli connection down Hotspot 2>/dev/null || true; '
+                    'nmcli connection up "{}"'
+                ).format(ssid.replace('"', '\\"'))
             ])
             
             return jsonify({
