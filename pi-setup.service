@@ -9,11 +9,10 @@ ExecStart=/home/koushik/pi-setup-boot.sh
 Restart=on-failure
 RestartSec=5
 User=root
-# When SoftAP mode runs, the boot script execs the Flask API and stays alive.
-# When home WiFi connects, the script exits 0 and the unit is inactive (success).
+# Boot script logs to /var/log/pi-setup.log itself; keep journal for systemd events only.
 SuccessExitStatus=0
-StandardOutput=append:/var/log/pi-setup.log
-StandardError=append:/var/log/pi-setup.log
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

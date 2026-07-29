@@ -13,11 +13,12 @@ SETUP_PSK="setup1234"
 WLAN_IF="wlan0"
 API_SCRIPT="/home/koushik/pi-setup-api.py"
 
-# IMPORTANT: log only to stderr + file. Never stdout — stdout is used for
-# return values from functions (connection names). Polluting stdout previously
-# made: nmcli connection up "<log line>\nHomeSecurity-Setup" fail.
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE" >&2
+    # Write once to the log file. Do not also tee to stderr when systemd
+    # StandardError=append points at the same file (that duplicated every line).
+    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+    echo "$msg" >>"$LOG_FILE"
+    echo "$msg" >&2
 }
 
 nm_log() {
