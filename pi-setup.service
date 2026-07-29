@@ -1,0 +1,15 @@
+[Unit]
+Description=Pi Home Security Setup Service
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=forking
+ExecStart=/home/koushik/pi-setup-boot.sh
+Restart=no
+User=root
+StandardOutput=append:/var/log/pi-setup.log
+StandardError=append:/var/log/pi-setup.log
+
+[Install]
+WantedBy=multi-user.target
