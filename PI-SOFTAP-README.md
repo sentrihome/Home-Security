@@ -155,6 +155,8 @@ Expected flow:
 | **Setup** | wlan0 AP | 10.42.0.1 | HomeSecurity-Setup | First-time config |
 | **Normal** | wlan0 STA | 192.168.0.236 | (home WiFi) | Day-to-day operation |
 
+Home mode always uses NetworkManager **manual** IPv4 `192.168.0.236/24` (gateway `192.168.0.1`), applied on SoftAP provisioning and reasserted on every boot.
+
 ## Security Notes
 
 - SoftAP password is hardcoded (`setup1234`) → change in `pi-setup-boot.sh` nmcli command

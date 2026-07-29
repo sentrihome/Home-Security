@@ -13,6 +13,13 @@ SETUP_PSK="setup1234"
 WLAN_IF="wlan0"
 API_SCRIPT="/home/koushik/pi-setup-api.py"
 
+# Fixed home-LAN address (ESP / app / deploy scripts assume this)
+STATIC_IP="192.168.0.236"
+STATIC_PREFIX="24"
+STATIC_GATEWAY="192.168.0.1"
+STATIC_DNS="192.168.0.1,8.8.8.8"
+STATIC_CIDR="${STATIC_IP}/${STATIC_PREFIX}"
+
 log() {
     # Write once to the log file. Do not also tee to stderr when systemd
     # StandardError=append points at the same file (that duplicated every line).
@@ -24,6 +31,17 @@ log() {
 nm_log() {
     # Run nmcli; append all output to log file only (keep stdout clean)
     nmcli "$@" >>"$LOG_FILE" 2>&1
+}
+
+apply_home_static_ip() {
+    local ssid="$1"
+    log "Applying static IP ${STATIC_CIDR} (gw ${STATIC_GATEWAY}) on connection [$ssid]"
+    nm_log connection modify "$ssid" \
+        ipv4.method manual \
+        ipv4.addresses "$STATIC_CIDR" \
+        ipv4.gateway "$STATIC_GATEWAY" \
+        ipv4.dns "$STATIC_DNS" \
+        ipv4.ignore-auto-dns yes
 }
 
 find_ap_connection() {
@@ -194,6 +212,11 @@ if [ -f "$CREDENTIALS_FILE" ]; then
         nm_log device set "$WLAN_IF" autoconnect yes || true
         nm_log connection modify "$SSID" connection.autoconnect yes || true
 
+        # Always reassert static home IP (survives GUI/DHCP changes)
+        if ! apply_home_static_ip "$SSID"; then
+            log "WARNING: Failed to apply static IP to $SSID"
+        fi
+
         if ap=$(find_ap_connection 2>/dev/null); then
             if softap_is_active "$ap"; then
                 log "Stopping SoftAP ($ap) before joining home WiFi"
@@ -202,7 +225,7 @@ if [ -f "$CREDENTIALS_FILE" ]; then
         fi
 
         if nm_log connection up "$SSID"; then
-            log "Connected to home WiFi successfully"
+            log "Connected to home WiFi successfully at ${STATIC_CIDR}"
             exit 0
         fi
         log "WARNING: Failed to connect to $SSID — falling back to setup SoftAP"

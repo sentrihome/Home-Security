@@ -60,14 +60,47 @@ if ! nmcli -t -f NAME connection show | grep -Fxq "HomeSecurity-Setup"; then
 fi
 nmcli connection modify HomeSecurity-Setup connection.autoconnect no 2>/dev/null || true
 
+# Apply static home IP to an already-provisioned SSID (if credentials exist).
+STATIC_IP="192.168.0.236"
+STATIC_CIDR="${STATIC_IP}/24"
+STATIC_GATEWAY="192.168.0.1"
+STATIC_DNS="192.168.0.1,8.8.8.8"
+CREDENTIALS_FILE="/home/koushik/wifi-credentials.json"
+
+echo "Ensuring home WiFi uses static IP ${STATIC_CIDR}..."
+HOME_SSID=""
+if [ -f "$CREDENTIALS_FILE" ]; then
+    HOME_SSID=$(jq -r '.ssid // empty' "$CREDENTIALS_FILE" 2>/dev/null || true)
+fi
+# Fall back to currently active wlan0 connection (e.g. Koushik)
+if [ -z "$HOME_SSID" ]; then
+    HOME_SSID=$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null \
+        | awk -F: '$2=="wlan0"{print $1; exit}')
+fi
+if [ -n "$HOME_SSID" ] && [ "$HOME_SSID" != "HomeSecurity-Setup" ] && [ "$HOME_SSID" != "Hotspot" ]; then
+    echo "Applying static IP to connection: $HOME_SSID"
+    nmcli connection modify "$HOME_SSID" \
+        ipv4.method manual \
+        ipv4.addresses "$STATIC_CIDR" \
+        ipv4.gateway "$STATIC_GATEWAY" \
+        ipv4.dns "$STATIC_DNS" \
+        ipv4.ignore-auto-dns yes || true
+    # Refresh address if this profile is already active
+    if nmcli -t -f NAME connection show --active 2>/dev/null | grep -Fxq "$HOME_SSID"; then
+        nmcli connection up "$HOME_SSID" || true
+    fi
+else
+    echo "No home SSID found yet — static IP will be applied on first SoftAP provisioning / boot."
+fi
+
 echo ""
 echo "✓ Installation complete!"
 echo ""
 echo "Next steps:"
 echo "  1. Reboot the Pi: sudo reboot"
-echo "  2. Pi will auto-start SoftAP (HomeSecurity-Setup) — no WiFi-menu click needed"
+echo "  2. If unconfigured: Pi auto-starts SoftAP (HomeSecurity-Setup) — no WiFi-menu click needed"
 echo "  3. Connect phone and POST credentials to http://10.42.0.1:4000/wifi"
-echo "  4. Pi will switch to home WiFi automatically"
+echo "  4. Pi switches to home WiFi at static ${STATIC_CIDR}"
 echo ""
 echo "To reset/reconfigure:"
 echo "  sudo rm /home/koushik/wifi-credentials.json"
