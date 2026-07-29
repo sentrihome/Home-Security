@@ -1,4 +1,5 @@
 #include "httpendpoints.h"
+#include "app_uart.h"
 
 esp_err_t api_health_resp(httpd_req_t *r) {
     return httpd_resp_sendstr(r, "{ \"health\": \"ok\" }");
@@ -18,6 +19,7 @@ esp_err_t api_pass_resp(httpd_req_t *r) {
     char extract[50];
     httpd_query_key_value(buf, "password", extract, sizeof(extract));
     printf("extracted part %s\n", extract);
+    uart_send(extract);
     return httpd_resp_sendstr(r, "{ \"received\": \"ok\" }");
 }
 

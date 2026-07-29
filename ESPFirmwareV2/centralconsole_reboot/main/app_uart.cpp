@@ -31,9 +31,17 @@ void uart_init() {
     printf("%lu\n", baudrate_print);
 }
 
-unsigned char uart_message[200];
+const char* stop = "END_OF_MESSAGE";
+unsigned char uart_message[200] = "END_OF_MESSAGE";
+
 
 void uart_receive(){
-    uart_read_bytes(UART_NUM_1, uart_message, sizeof(uart_message), 100);
-    printf("%s", uart_message);
+    int length = uart_read_bytes(UART_NUM_1, uart_message, sizeof(uart_message), 100);
+    uart_message[length] = '\0';
+    if (length <= 0 ){
+        return;
+    }
+    if (memcmp(uart_message, stop, strlen(stop)) != 0){
+        printf("Received: %s\n", uart_message);
+    }
 }
