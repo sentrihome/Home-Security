@@ -1,4 +1,4 @@
-import { config } from '@/lib/config';
+import { config, getPiBaseUrl } from '@/lib/config';
 import type { EventClip, StreamStatus } from '@/types';
 
 export class ApiError extends Error {
@@ -115,24 +115,24 @@ export const cloudApi = {
 /** Pi backend (port 4000) */
 export const piApi = {
   health: (baseUrl?: string) =>
-    request('/health', { baseUrl: baseUrl ?? config.piBaseUrl }),
+    request('/health', { baseUrl: baseUrl ?? getPiBaseUrl() }),
 
   start: (type: string, value = '', baseUrl?: string) =>
     request('/start', {
       method: 'POST',
       body: { type, value },
-      baseUrl: baseUrl ?? config.piBaseUrl,
+      baseUrl: baseUrl ?? getPiBaseUrl(),
     }),
 
   stop: (baseUrl?: string) =>
     request('/stop', {
       method: 'POST',
-      baseUrl: baseUrl ?? config.piBaseUrl,
+      baseUrl: baseUrl ?? getPiBaseUrl(),
     }),
 
   motion: (baseUrl?: string) =>
     request('/motion', {
       method: 'POST',
-      baseUrl: baseUrl ?? config.piBaseUrl,
+      baseUrl: baseUrl ?? getPiBaseUrl(),
     }),
 };
