@@ -76,14 +76,18 @@ def set_wifi():
             
             # Schedule switch to home WiFi (give client time to get response).
             # SoftAP connection may be named HomeSecurity-Setup or legacy Hotspot.
+            # Re-enable STA autoconnect that setup mode disabled.
+            safe_ssid = ssid.replace('"', '\\"')
             subprocess.Popen([
                 'bash', '-c',
                 (
                     'sleep 3; '
+                    'nmcli device set wlan0 autoconnect yes; '
+                    'nmcli connection modify "{ssid}" connection.autoconnect yes; '
                     'nmcli connection down HomeSecurity-Setup 2>/dev/null || '
                     'nmcli connection down Hotspot 2>/dev/null || true; '
-                    'nmcli connection up "{}"'
-                ).format(ssid.replace('"', '\\"'))
+                    'nmcli connection up "{ssid}"'
+                ).format(ssid=safe_ssid)
             ])
             
             return jsonify({

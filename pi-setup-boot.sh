@@ -1,9 +1,9 @@
 #!/bin/bash
 # Pi SoftAP Boot Script
-# Checks if WiFi is configured; if not, brings SoftAP up automatically
-# (no need to click HomeSecurity-Setup in the WiFi menu).
+# If unconfigured, activates HomeSecurity-Setup SoftAP automatically
+# (no tray/menu click required).
 
-set -e
+set -euo pipefail
 
 CREDENTIALS_FILE="/home/koushik/wifi-credentials.json"
 LOG_FILE="/var/log/pi-setup.log"
@@ -13,109 +13,156 @@ SETUP_PSK="setup1234"
 WLAN_IF="wlan0"
 API_SCRIPT="/home/koushik/pi-setup-api.py"
 
+# IMPORTANT: log only to stderr + file. Never stdout — stdout is used for
+# return values from functions (connection names). Polluting stdout previously
+# made: nmcli connection up "<log line>\nHomeSecurity-Setup" fail.
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE" >&2
+}
+
+nm_log() {
+    # Run nmcli; append all output to log file only (keep stdout clean)
+    nmcli "$@" >>"$LOG_FILE" 2>&1
 }
 
 find_ap_connection() {
-    # Prefer exact name, then any wifi connection in AP mode, then legacy "Hotspot"
     if nmcli -t -f NAME connection show 2>/dev/null | grep -Fxq "$SETUP_CON"; then
-        echo "$SETUP_CON"
+        printf '%s\n' "$SETUP_CON"
         return 0
     fi
 
-    local name
+    local name mode
     while IFS= read -r name; do
         [ -z "$name" ] && continue
         mode=$(nmcli -g 802-11-wireless.mode connection show "$name" 2>/dev/null || true)
         if [ "$mode" = "ap" ]; then
-            echo "$name"
+            printf '%s\n' "$name"
             return 0
         fi
     done < <(nmcli -t -f NAME connection show 2>/dev/null)
 
     if nmcli -t -f NAME connection show 2>/dev/null | grep -Fxq "Hotspot"; then
-        echo "Hotspot"
+        printf '%s\n' "Hotspot"
         return 0
     fi
 
     return 1
 }
 
+disable_sta_autoconnect() {
+    # Stop home WiFi profiles from reclaiming wlan0 after we drop them for SoftAP.
+    local name mode
+    while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        [ "$name" = "$SETUP_CON" ] && continue
+        mode=$(nmcli -g 802-11-wireless.mode connection show "$name" 2>/dev/null || true)
+        if [ "$mode" = "infrastructure" ]; then
+            nm_log connection modify "$name" connection.autoconnect no || true
+        fi
+    done < <(nmcli -t -f NAME,TYPE connection show 2>/dev/null | awk -F: '$2 ~ /wireless/ {print $1}')
+}
+
 ensure_softap_connection() {
-    local con
+    local con=""
+
     if con=$(find_ap_connection); then
         log "Found existing AP connection: $con"
-        # Keep profile present in the menu, but do not rely on manual click —
-        # script will activate it. Autoconnect off so it does not fight home WiFi.
-        nmcli connection modify "$con" \
+        nm_log connection modify "$con" \
             connection.autoconnect no \
             802-11-wireless.ssid "$SETUP_SSID" \
             802-11-wireless.mode ap \
             ipv4.method shared \
             802-11-wireless-security.key-mgmt wpa-psk \
-            802-11-wireless-security.psk "$SETUP_PSK" \
-            2>&1 | tee -a "$LOG_FILE" || true
-        # Rename legacy "Hotspot" so the menu label matches the SSID
+            802-11-wireless-security.psk "$SETUP_PSK" || true
+
         if [ "$con" != "$SETUP_CON" ]; then
-            nmcli connection modify "$con" connection.id "$SETUP_CON" 2>&1 | tee -a "$LOG_FILE" || true
+            nm_log connection modify "$con" connection.id "$SETUP_CON" || true
             con="$SETUP_CON"
         fi
-        echo "$con"
+        printf '%s\n' "$con"
         return 0
     fi
 
     log "Creating SoftAP connection $SETUP_CON"
-    nmcli connection add \
+    nm_log connection add \
         type wifi \
         ifname "$WLAN_IF" \
         con-name "$SETUP_CON" \
         autoconnect no \
-        ssid "$SETUP_SSID" \
-        2>&1 | tee -a "$LOG_FILE"
+        ssid "$SETUP_SSID"
 
-    nmcli connection modify "$SETUP_CON" \
+    nm_log connection modify "$SETUP_CON" \
         802-11-wireless.mode ap \
         802-11-wireless.band a \
         802-11-wireless.channel 36 \
         ipv4.method shared \
         wifi-sec.key-mgmt wpa-psk \
-        wifi-sec.psk "$SETUP_PSK" \
-        2>&1 | tee -a "$LOG_FILE"
+        wifi-sec.psk "$SETUP_PSK"
 
-    echo "$SETUP_CON"
+    printf '%s\n' "$SETUP_CON"
+}
+
+softap_is_active() {
+    local con="$1"
+    nmcli -t -f NAME connection show --active 2>/dev/null | grep -Fxq "$con"
 }
 
 start_softap() {
     log "No WiFi configured or home WiFi failed — starting SoftAP automatically"
 
-    # Ensure dnsmasq won't conflict with NM shared DHCP
     if systemctl is-active dnsmasq.service >/dev/null 2>&1; then
         systemctl stop dnsmasq.service
     fi
     if systemctl is-enabled dnsmasq.service >/dev/null 2>&1; then
-        systemctl disable dnsmasq.service
+        systemctl disable dnsmasq.service >/dev/null 2>&1 || true
     fi
 
     local con
     con=$(ensure_softap_connection)
+    # Strip any accidental whitespace/newlines
+    con=$(printf '%s' "$con" | tr -d '\r' | awk 'NF{print; exit}')
 
-    # Drop any active STA connection on wlan so AP can bind
-    local active
-    active=$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | awk -F: -v iface="$WLAN_IF" '$2==iface {print $1; exit}')
-    if [ -n "$active" ] && [ "$active" != "$con" ]; then
-        log "Bringing down active connection on $WLAN_IF: $active"
-        nmcli connection down "$active" 2>&1 | tee -a "$LOG_FILE" || true
+    if [ -z "$con" ]; then
+        log "ERROR: could not resolve SoftAP connection name"
+        exit 1
     fi
 
+    log "Using SoftAP connection name: [$con]"
+
+    # Prevent STA profiles (e.g. Koushik) from auto-reconnecting over SoftAP
+    disable_sta_autoconnect
+    nm_log device set "$WLAN_IF" autoconnect no || true
+
+    local active
+    active=$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null \
+        | awk -F: -v iface="$WLAN_IF" '$2==iface {print $1; exit}')
+    if [ -n "${active:-}" ] && [ "$active" != "$con" ]; then
+        log "Bringing down active connection on $WLAN_IF: $active"
+        nm_log connection down "$active" || true
+        sleep 1
+    fi
+
+    # Disconnect device first so AP can bind cleanly
+    nm_log device disconnect "$WLAN_IF" || true
+    sleep 1
+
     log "Activating SoftAP connection: $con"
-    if ! nmcli connection up "$con" 2>&1 | tee -a "$LOG_FILE"; then
+    if ! nm_log connection up "$con"; then
         log "ERROR: Failed to start SoftAP ($con)"
         exit 1
     fi
 
-    log "SoftAP up — SSID=$SETUP_SSID  IP=10.42.0.1  password=$SETUP_PSK"
+    # Verify it actually came up (don't trust exit code alone)
     sleep 2
+    if ! softap_is_active "$con"; then
+        log "ERROR: SoftAP connection $con is not active after nmcli up"
+        nmcli -t -f NAME,DEVICE connection show --active >>"$LOG_FILE" 2>&1 || true
+        exit 1
+    fi
+
+    local ip
+    ip=$(ip -4 -o addr show "$WLAN_IF" 2>/dev/null | awk '{print $4}' | head -1)
+    log "SoftAP active — SSID=$SETUP_SSID iface_addr=${ip:-unknown} password=$SETUP_PSK"
 
     if [ ! -f "$API_SCRIPT" ]; then
         log "ERROR: Missing $API_SCRIPT"
@@ -128,8 +175,7 @@ start_softap() {
 
 log "=== Pi Setup Boot Check ==="
 
-# Wait briefly for NetworkManager
-for _ in 1 2 3 4 5 6 7 8 9 10; do
+for _ in $(seq 1 15); do
     if nmcli general status >/dev/null 2>&1; then
         break
     fi
@@ -143,15 +189,18 @@ if [ -f "$CREDENTIALS_FILE" ]; then
     if [ "$CONFIGURED" = "true" ] && [ -n "$SSID" ]; then
         log "WiFi configured for SSID: $SSID"
 
-        # Make sure SoftAP is not holding the radio
+        # Re-enable STA autoconnect for normal mode
+        nm_log device set "$WLAN_IF" autoconnect yes || true
+        nm_log connection modify "$SSID" connection.autoconnect yes || true
+
         if ap=$(find_ap_connection 2>/dev/null); then
-            if nmcli -t -f NAME connection show --active 2>/dev/null | grep -Fxq "$ap"; then
+            if softap_is_active "$ap"; then
                 log "Stopping SoftAP ($ap) before joining home WiFi"
-                nmcli connection down "$ap" 2>&1 | tee -a "$LOG_FILE" || true
+                nm_log connection down "$ap" || true
             fi
         fi
 
-        if nmcli connection up "$SSID" 2>&1 | tee -a "$LOG_FILE"; then
+        if nm_log connection up "$SSID"; then
             log "Connected to home WiFi successfully"
             exit 0
         fi
