@@ -1,53 +1,70 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-H2 | ESP32-H21 | ESP32-H4 | ESP32-P4 | ESP32-S2 | ESP32-S3 | Linux |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- | --------- | -------- | -------- | -------- | -------- | ----- |
+# ESP32 Central Console — esp2 (HTTP → UART Passthrough AP)
 
-# Hello World Example
+This variant of the home security central console firmware runs an ESP32 as a **WiFi Access Point** that exposes HTTP endpoints for receiving configuration parameters (SSID, passwords, OTP, schedule) from a client device, then relays them via UART1 to external sensor/actuator hardware.
 
-Starts a FreeRTOS task to print "Hello World".
+## Quick Start
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+```bash
+# Set target and build
+idf.py set-target esp32
+idf.py build
 
-## How to use example
-
-Follow detailed instructions provided specifically for this example.
-
-Select the instructions depending on Espressif chip installed on your development board:
-
-- [ESP32 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/stable/get-started/index.html)
-- [ESP32-S2 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/get-started/index.html)
-
-
-## Example folder contents
-
-The project **hello_world** contains one source file in C language [hello_world_main.c](main/hello_world_main.c). The file is located in folder [main](main).
-
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt` files that provide set of directives and instructions describing the project's source files and targets (executable, library, or both).
-
-Below is short explanation of remaining files in the project folder.
-
-```
-├── CMakeLists.txt
-├── pytest_hello_world.py      Python script used for automated testing
-├── main
-│   ├── CMakeLists.txt
-│   └── hello_world_main.c
-└── README.md                  This is the file you are currently reading
+# Flash and monitor (adjust COM port as needed)
+idf.py -p /dev/tty.usbserial-110 flash
+idf.py -p /dev/tty.usbserial-110 monitor
 ```
 
-For more information on structure and contents of ESP-IDF projects, please refer to Section [Build System](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/build-system.html) of the ESP-IDF Programming Guide.
+Connect to WiFi network `espwifi` (password: `23012003`) from your client device, then hit the ESP's IP on port 80.
 
-## Troubleshooting
+## Endpoints
 
-* Program upload failure
+| Method | Path | Query Param | Purpose |
+|---|---|---|---|
+| `GET` | `/health` | — | Liveness check, returns `{ "health": "ok" }` |
+| `POST` | `/pass` | `password` | Receive permanent password |
+| `POST` | `/ssid` | `ssid` | Receive Wi-Fi SSID |
+| `POST` | `/permanentpass` | `permanentpass` | Receive permanent pass (redundant with `/pass`) |
+| `POST` | `/encryptedpass` | `encryptedpass` | Receive encrypted password |
+| `POST` | `/otp` | `otp` | Receive one-time password |
+| `POST` | `/schedule` | `schedulestart` | Set schedule start time |
+| `POST` | `/schedule` | `schedulestop` | Set schedule stop time |
 
-    * Hardware connection is not correct: run `idf.py -p PORT monitor`, and reboot your board to see if there are any output logs.
-    * The baud rate for downloading is too high: lower your baud rate in the `menuconfig` menu, and try again.
+All POST handlers extract the named query parameter, forward its value to the UART-connected sensor device, and return a JSON ack.
 
-## Technical support and feedback
+## Wiring / Pinout
 
-Please use the following feedback channels:
+| Peripheral | ESP32 Pin(s) | Notes |
+|---|---|---|
+| UART1 TX | GPIO17 | Baud 230120, odd parity, 8N1 |
+| UART1 RX | GPIO18 | |
+| UART1 RTS | GPIO4 | Hardware flow control (disabled) |
+| UART1 CTS | GPIO5 | Hardware flow control (disabled) |
 
-* For technical queries, go to the [esp32.com](https://esp32.com/) forum
-* For a feature request or bug report, create a [GitHub issue](https://github.com/espressif/esp-idf/issues)
+## Known Problems (TODO)
 
-We will get back to you as soon as possible.
+### Critical — Must Fix Before Production
+
+1. **No authentication on credential endpoints** — Anyone connected to the AP WiFi can submit passwords, OTPs, and schedules over HTTP with zero access control. An attacker within WiFi range can configure the entire security system.
+   - *Fix:* Add at least a shared-secret token parameter to all POST requests; prefer challenge-response or session-based auth.
+
+2. **Credentials logged in plaintext** — Every credential endpoint does `printf("... extracted part %s\n", extract)` which dumps secrets to UART debug output. Anyone with serial console access can read submitted credentials.
+   - *Fix:* Remove `printf` of extracted values; log only the parameter name, not its content.
+
+3. **Duplicate `/schedule` URI** — Both schedule start and stop handlers register the same path (`/schedule`, method POST). `esp_http_server` silently rejects duplicates (last registration wins), meaning one schedule endpoint is completely broken with no error or log warning.
+   - *Fix:* Use distinct paths: `/schedule/start` and `/schedule/stop`.
+
+### Important — Should Fix
+
+4. **No input validation on forwarded parameters** — HTTP query strings are passed directly to UART with no length, charset, or format checks. A parameter longer than 200 bytes corrupts the receive buffer in `app_uart.cpp`.
+   - *Fix:* Validate length and strip control characters per endpoint type before calling `uart_send()`.
+
+5. **Buffer overflow risk in `uart_send()`** — The `"END_OF_MESSAGE"` delimiter is appended with no size check against the 200-byte transmit buffer. If a parameter fills most of the buffer, the delimiter writes past its bounds.
+   - *Fix:* Check remaining space before appending the delimiter; truncate or reject oversized inputs.
+
+6. **Blocking single-loop architecture** — The `while(true)` / `delay(2000)` main loop means HTTP handlers and UART polling compete for the same thread. Long UART reads will block incoming HTTP requests and vice versa.
+   - *Fix:* Use FreeRTOS tasks (one for the HTTP server, one for UART polling) or non-blocking I/O with task notifications.
+
+### Nice-to-Have
+
+7. **WiFi credentials hardcoded** — AP SSID/password are in plaintext source code and in `sdkconfig`. Acceptable for prototyping but should be configurable at first boot or stored in NVS.
+8. **No HTTPS/TLS** — All credentials travel in cleartext over the HTTP-to-ESP link. Even on a local network, an evil-NAP attack can intercept them.
