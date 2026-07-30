@@ -29,6 +29,5 @@ extern "C" void app_main(void) {
     display.init();
     display.process();
     uart_receive();
-    delay(200);
   }
 }

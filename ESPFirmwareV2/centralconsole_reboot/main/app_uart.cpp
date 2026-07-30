@@ -36,8 +36,8 @@ unsigned char uart_message[200] = "END_OF_MESSAGE";
 
 
 void uart_receive(){
-    int length = uart_read_bytes(UART_NUM_1, uart_message, sizeof(uart_message), 100);
-    uart_message[length] = '\0';
+    int length = uart_read_bytes(UART_NUM_1, uart_message, sizeof(uart_message) - 1, 100);
+    uart_message[sizeof(uart_message) - 1] = '\0';
     if (length <= 0 ){
         return;
     }
