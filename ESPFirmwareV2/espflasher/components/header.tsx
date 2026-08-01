@@ -8,7 +8,7 @@ import { Cpu, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useFlasher } from "@/hooks/use-flasher-state";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/theme-provider";
 import { useEffect, useState } from "react";
 
 /** Minimal firmware metadata shape from /api/firmware/latest. */

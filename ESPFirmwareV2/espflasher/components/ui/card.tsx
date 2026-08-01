@@ -9,6 +9,7 @@ function Card({
 }: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
   return (
     <div
+      suppressHydrationWarning
       data-slot="card"
       data-size={size}
       className={cn(

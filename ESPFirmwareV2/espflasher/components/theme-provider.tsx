@@ -1,21 +1,50 @@
 /**
- * Theme provider — wraps app with next-themes for dark/light mode toggle.
+ * Theme provider — minimal custom implementation with zero <script> injection.
+ * Initial theme is set by the className on <html> in layout.tsx.
  */
 
 "use client";
 
-import dynamic from "next/dynamic";
+import { createContext, useContext, useEffect, useState } from "react";
 
-const NextThemesProvider = dynamic(
-  () => import("next-themes").then((e) => ({ default: e.ThemeProvider })),
-  { ssr: false },
-);
+type Theme = "dark" | "light";
 
-interface ThemeProviderProps {
-  children: React.ReactNode;
-  [key: string]: any;
+interface ThemeContextValue {
+  theme: Theme;
+  setTheme: (t: Theme) => void;
+  resolvedTheme: Theme | undefined;
 }
 
-export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
-  return <NextThemesProvider {...props}>{children}</NextThemesProvider>;
+const ThemeContext = createContext<ThemeContextValue>({
+  theme: "dark",
+  setTheme: () => {},
+  resolvedTheme: undefined,
+});
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setThemeState] = useState<Theme>("dark");
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const initial = root.classList.contains("dark") ? "dark" : "light";
+    setThemeState(initial);
+  }, []);
+
+  const setTheme = (t: Theme) => {
+    document.documentElement.className = t;
+    localStorage.setItem("theme", t);
+    setThemeState(t);
+  };
+
+  return (
+    <ThemeContext.Provider
+      value={{ theme, setTheme, resolvedTheme: typeof window !== "undefined" ? theme : undefined }}
+    >
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+
+export function useTheme() {
+  return useContext(ThemeContext);
 }

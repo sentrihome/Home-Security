@@ -92,7 +92,7 @@ export interface FlasherState {
 const STORED_VERSION_KEY = "espflasher-installed-version";
 
 function getInstalledVersion(): string {
-  if (typeof localStorage === "undefined") return "v0.0.0";
+  if (typeof localStorage !== "object" || typeof localStorage?.getItem !== "function") return "v0.0.0";
   return localStorage.getItem(STORED_VERSION_KEY) ?? "v0.0.0";
 }
 

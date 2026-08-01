@@ -4,12 +4,12 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Download, XCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { Download, XCircle, CheckCircle2 } from "lucide-react";
 import { useFlasher } from "@/hooks/use-flasher-state";
 import { useFirmwareDownload } from "@/hooks/use-firmware-download";
 import { usePythonDownload } from "@/hooks/use-python-download";
