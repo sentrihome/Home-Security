@@ -1,7 +1,8 @@
 import requests
 import json
+import os
 
-GITAPI = ""
+GITAPI = os.environ.get("GITHUB_PAT", "")
 USER = "sinisterchiller"
 REPO = "buildreleasetest"
 TARGET_FILE = "payload.json"
