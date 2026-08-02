@@ -46,6 +46,21 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Security panel palette */
+  --alarm-red: oklch(0.6 0.22 15);
+  --alarm-red-dim: oklch(0.6 0.22 15 / 30%);
+  --alarm-red-glow: oklch(0.6 0.22 15 / 15%);
+  --amber: oklch(0.75 0.18 70);
+  --amber-dim: oklch(0.75 0.18 70 / 30%);
+  --amber-glow: oklch(0.75 0.18 70 / 12%);
+  --secure-green: oklch(0.68 0.16 145);
+  --secure-green-dim: oklch(0.68 0.16 145 / 30%);
+  --secure-green-glow: oklch(0.68 0.16 145 / 10%);
+  --steel-blue: oklch(0.55 0.12 225);
+  --steel-blue-dim: oklch(0.55 0.12 225 / 30%);
+  --steel-blue-glow: oklch(0.55 0.12 225 / 12%);
+  --steel-blue-fg: oklch(0.96 0.005 225);
 }
 
 :root {
@@ -84,37 +99,267 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Near-black background — not navy, true deep charcoal */
+  --background: oklch(0.075 0.005 260);
+  --foreground: oklch(0.88 0.005 260);
+
+  /* Deep charcoal cards */
+  --card: oklch(0.11 0.005 260);
+  --card-foreground: oklch(0.88 0.005 260);
+  --popover: oklch(0.11 0.005 260);
+  --popover-foreground: oklch(0.88 0.005 260);
+
+  /* Primary = steel blue for actions */
+  --primary: var(--steel-blue);
+  --primary-foreground: var(--steel-blue-fg);
+
+  /* Muted tones — raised for readability */
+  --secondary: oklch(0.16 0.005 260);
+  --secondary-foreground: oklch(0.88 0.005 260);
+  --muted: oklch(0.14 0.005 260);
+  --muted-foreground: oklch(0.55 0.005 260);
+  --accent: oklch(0.16 0.005 260);
+  --accent-foreground: oklch(0.88 0.005 260);
+
+  /* Destructive = alarm red */
+  --destructive: var(--alarm-red);
+
+  /* Borders = subtle charcoal lines */
+  --border: oklch(0.18 0.005 260 / 70%);
+  --input: oklch(0.16 0.005 260);
+  --ring: var(--steel-blue);
+
+  /* Chart colors for progress bars */
+  --chart-1: var(--steel-blue);
+  --chart-2: var(--amber);
+  --chart-3: var(--secure-green);
+  --chart-4: var(--alarm-red);
+  --chart-5: oklch(0.5 0.01 260);
+
+  /* Sidebar */
+  --sidebar: oklch(0.09 0.005 260);
+  --sidebar-foreground: oklch(0.88 0.005 260);
+  --sidebar-primary: var(--steel-blue);
+  --sidebar-primary-foreground: var(--steel-blue-fg);
+  --sidebar-accent: oklch(0.16 0.005 260);
+  --sidebar-accent-foreground: oklch(0.88 0.005 260);
+  --sidebar-border: oklch(0.18 0.005 260 / 70%);
+  --sidebar-ring: var(--steel-blue);
+}
+
+/* Sharp corners — minimal rounding */
+.sharp-card {
+  border-radius: 2px;
+}
+
+/* Scanline / surveillance grid texture */
+.bg-scanlines {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+
+/* Subtle grid texture for surveillance feel */
+.bg-surveillance-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Alarm red glow for active/armed states */
+.glow-red {
+  box-shadow: 0 0 12px var(--alarm-red-glow), 0 0 24px rgba(0, 0, 0, 0.3);
+  border-color: var(--alarm-red-dim);
+}
+
+/* Amber glow for pending/in-progress */
+.glow-amber {
+  box-shadow: 0 0 12px var(--amber-glow), 0 0 24px rgba(0, 0, 0, 0.3);
+  border-color: var(--amber-dim);
+}
+
+/* Green glow for secure/verified */
+.glow-green {
+  box-shadow: 0 0 12px var(--secure-green-glow), 0 0 24px rgba(0, 0, 0, 0.3);
+  border-color: var(--secure-green-dim);
+}
+
+/* Steel blue glow for primary actions */
+.glow-blue {
+  box-shadow: 0 0 12px var(--steel-blue-glow), 0 0 24px rgba(0, 0, 0, 0.3);
+  border-color: var(--steel-blue-dim);
+}
+
+/* Deep charcoal card */
+.charcoal-card {
+  background: linear-gradient(
+    180deg,
+    oklch(0.11 0.005 260) 0%,
+    oklch(0.095 0.005 260) 100%
+  );
+  border: 1px solid oklch(0.18 0.005 260 / 70%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* Steel blue gradient button */
+.steel-btn {
+  background: linear-gradient(180deg, var(--steel-blue), color-mix(in oklch, var(--steel-blue), black 15%));
+  color: var(--steel-blue-fg);
+  border: 1px solid oklch(0.55 0.12 225 / 40%);
+  transition: all 150ms ease-out;
+}
+.steel-btn:not(:disabled):hover {
+  background: linear-gradient(180deg, color-mix(in oklch, var(--steel-blue), white 8%), var(--steel-blue));
+  box-shadow: 0 2px 12px var(--steel-blue-glow);
+  transform: translateY(-1px);
+}
+.steel-btn:active {
+  transform: translateY(0);
+}
+
+/* Alarm red gradient button */
+.alarm-btn {
+  background: linear-gradient(180deg, var(--alarm-red), color-mix(in oklch, var(--alarm-red), black 15%));
+  color: oklch(0.95 0 0);
+  border: 1px solid oklch(0.6 0.22 15 / 40%);
+  transition: all 150ms ease-out;
+}
+.alarm-btn:not(:disabled):hover {
+  background: linear-gradient(180deg, color-mix(in oklch, var(--alarm-red), white 8%), var(--alarm-red));
+  box-shadow: 0 2px 12px var(--alarm-red-glow);
+  transform: translateY(-1px);
+}
+.alarm-btn:active {
+  transform: translateY(0);
+}
+
+/* Amber gradient button */
+.amber-btn {
+  background: linear-gradient(180deg, var(--amber), color-mix(in oklch, var(--amber), black 15%));
+  color: oklch(0.2 0 0);
+  border: 1px solid oklch(0.75 0.18 70 / 40%);
+  transition: all 150ms ease-out;
+}
+.amber-btn:not(:disabled):hover {
+  background: linear-gradient(180deg, color-mix(in oklch, var(--amber), white 8%), var(--amber));
+  box-shadow: 0 2px 12px var(--amber-glow);
+  transform: translateY(-1px);
+}
+.amber-btn:active {
+  transform: translateY(0);
+}
+
+/* Amber progress bar */
+.amber-progress .progress-indicator {
+  background: linear-gradient(90deg, var(--amber), color-mix(in oklch, var(--amber), white 15%));
+}
+
+/* Steel blue progress bar */
+.steel-progress .progress-indicator {
+  background: linear-gradient(90deg, var(--steel-blue), color-mix(in oklch, var(--steel-blue), white 15%));
+}
+
+/* Green progress bar */
+.green-progress .progress-indicator {
+  background: linear-gradient(90deg, var(--secure-green), color-mix(in oklch, var(--secure-green), white 15%));
+}
+
+/* Monospace status display */
+.status-mono {
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+/* Blinking cursor for console feel */
+@keyframes blink-cursor {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+.animate-cursor {
+  animation: blink-cursor 1s step-end infinite;
+}
+
+/* Pulse for armed/active states */
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.animate-pulse-red {
+  animation: pulse-red 2s ease-in-out infinite;
+}
+
+@keyframes pulse-amber {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-pulse-amber {
+  animation: pulse-amber 1.5s ease-in-out infinite;
+}
+
+/* Top status bar line */
+.status-bar-top {
+  position: relative;
+}
+.status-bar-top::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--steel-blue);
+  box-shadow: 0 0 8px var(--steel-blue-glow);
+}
+
+/* Card hover — restrained console panel feel */
+.card-hover {
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+.card-hover:hover {
+  border-color: oklch(0.55 0.12 225 / 30%);
+  box-shadow:
+    0 0 8px oklch(0.55 0.12 225 / 6%),
+    inset 0 0 12px oklch(0.55 0.12 225 / 3%),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* Icon button hover — rotate/pulse the icon, not the button */
+.icon-hover {
+  transition: all 150ms ease-out;
+}
+.icon-hover:hover svg {
+  transform: rotate(15deg);
+}
+
+/* Icon pulse on hover */
+@keyframes icon-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+.icon-pulse-hover:hover svg {
+  animation: icon-pulse 0.6s ease-out;
+}
+
+/* Disabled button — no hover effect at all */
+.btn-disabled {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+/* Typography tiers for dark security panel */
+/* Tier 1: primary content — high-contrast off-white */
+.text-primary-content {
+  color: oklch(0.88 0.005 260);
+}
+/* Tier 2: secondary/supporting — medium-contrast gray */
+.text-secondary-content {
+  color: oklch(0.65 0.005 260);
+}
+/* Tier 3: de-emphasized/meta — dimmest allowed */
+.text-meta {
+  color: oklch(0.55 0.005 260);
 }
 
 @layer base {

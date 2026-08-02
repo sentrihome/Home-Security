@@ -14,9 +14,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className="dark">
-      <body className="min-h-screen bg-background font-sans antialiased">
+      <body className="min-h-screen font-sans antialiased">
         <ThemeProvider>
-          {children}
+          {/* Near-black background with surveillance grid */}
+          <div className="relative min-h-screen bg-[oklch(0.075_0.005_260)]">
+            <div className="absolute inset-0 bg-surveillance-grid opacity-60" />
+            <div className="relative z-10">{children}</div>
+          </div>
         </ThemeProvider>
       </body>
     </html>

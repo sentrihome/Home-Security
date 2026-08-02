@@ -11,39 +11,31 @@ import { FirmwareCheckCard } from "@/components/firmware-check";
 import { DownloadCard } from "@/components/download-card";
 import { DeviceSelectCard } from "@/components/device-select";
 import { FlashCard } from "@/components/flash-card";
-import { Separator } from "@/components/ui/separator";
-import { FlasherProvider, useFlasher } from "@/hooks/use-flasher-state";
+import { FlasherProvider } from "@/hooks/use-flasher-state";
 
 export default function Home() {
   return (
     <FlasherProvider>
-      <main className="mx-auto max-w-xl px-4 py-8 space-y-6">
-        {/* Header */}
-        <Header />
-
-        {/* Web Serial support check — only shown in FlasherProvider context */}
+      <main className="mx-auto max-w-5xl px-4 py-6 space-y-6">
+        <HeroHeader />
         <WebSerialCheck />
-
-        <Separator />
-
-        {/* Stacked feature cards */}
         <FeatureCards />
       </main>
     </FlasherProvider>
   );
 }
 
-/**
- * Check Web Serial support from within the FlasherProvider context.
- * Shows the fallback alert when unsupported.
- */
-function WebSerialCheck() {
-  return null; // Feature detection handled in DeviceSelectCard
+function HeroHeader() {
+  const isSupported =
+    typeof navigator !== "undefined" && "serial" in navigator;
+  if (!isSupported) return null;
+  return <Header />;
 }
 
-/**
- * Stacked feature cards — only rendered when Web Serial is supported.
- */
+function WebSerialCheck() {
+  return null;
+}
+
 function FeatureCards() {
   const isSupported =
     typeof navigator !== "undefined" && "serial" in navigator;
@@ -53,11 +45,11 @@ function FeatureCards() {
   }
 
   return (
-    <>
+    <div className="grid gap-4 sm:grid-cols-2">
       <FirmwareCheckCard />
-      <DownloadCard />
       <DeviceSelectCard />
+      <DownloadCard />
       <FlashCard />
-    </>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 /**
- * Download card — shows real progress while downloading firmware, with cancel button.
+ * Download card — firmware download with progress and cancel.
+ * Security panel aesthetic: sharp corners, charcoal card, steel blue progress.
  */
 
 "use client";
@@ -27,40 +28,48 @@ export function DownloadCard() {
   const isDownloading = state.downloadProgress.phase === "downloading";
   const isDownloaded = state.downloadProgress.phase === "downloaded";
   const downloadError = state.downloadProgress.phase === "error";
-  const hasUpdate = state.firmwareVersion.phase === "update-available";
 
   const { downloadFirmware, cancelDownload: cancelBinary, progressPercent } = useFirmwareDownload();
   const [downloadUrl] = useState<string | null>(null);
 
-  // Python-script-driven download with polling progress
   const pythonDl = usePythonDownload();
 
+  const cardGlow = isDownloaded
+    ? "glow-green"
+    : downloadError
+      ? "glow-red"
+      : "";
+
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2">
-          <Download className="h-4 w-4 text-muted-foreground" />
+    <Card className={`sharp-card charcoal-card card-hover ${cardGlow}`}>
+      <CardHeader className="pb-4">
+        <CardTitle className="text-[15px] font-semibold tracking-[0.15em] uppercase text-primary-content flex items-center gap-3">
+          <div className="flex h-6 w-6 items-center justify-center rounded-sm bg-[oklch(0.16_0.005_260)] border border-border">
+            <Download className="h-4 w-4 text-secondary-content" />
+          </div>
           Firmware Download
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5 px-7 py-7">
         {/* Active: Python download progress */}
         {pythonDl.phase === "running" && (
           <>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
+              <span className="font-mono text-amber-500 tracking-[0.15em] uppercase font-semibold">
                 {pythonDl.message
                   ? pythonDl.message.charAt(0).toUpperCase() + pythonDl.message.slice(1)
-                  : "Downloading..."}
+                  : "DOWNLOADING"}
               </span>
-              <span className="font-mono">{(pythonDl.pct ?? 0).toFixed(1)}%</span>
+              <span className="font-mono text-meta">{(pythonDl.pct ?? 0).toFixed(1)}%</span>
             </div>
-            <Progress value={pythonDl.pct ?? 0} className="h-2" />
+            <Progress value={pythonDl.pct ?? 0} className="h-1.5 amber-progress sharp-card" />
             {pythonDl.speedMbs != null && pythonDl.speedMbs > 0 && (
-              <p className="text-xs text-muted-foreground">{pythonDl.speedMbs.toFixed(1)} MB/s</p>
+              <p className="text-sm font-mono text-meta">{pythonDl.speedMbs.toFixed(1)} MB/s</p>
             )}
-            <Button variant="outline" size="sm" onClick={pythonDl.cancel} className="gap-1">
-              <XCircle className="h-3.5 w-3.5" />
+            <Button variant="outline" size="sm" onClick={pythonDl.cancel} className="gap-2 font-mono text-sm rounded-sm py-2.5 px-5">
+              <span className="icon-hover">
+                <XCircle className="h-4 w-4" />
+              </span>
               Cancel
             </Button>
           </>
@@ -69,38 +78,44 @@ export function DownloadCard() {
         {/* Active: Python download complete */}
         {pythonDl.phase === "complete" && (
           <>
-            <div className="flex items-center justify-center gap-2 text-sm text-green-600 dark:text-green-400">
-              <CheckCircle2 className="h-4 w-4" />
-              <span>Firmware downloaded successfully!</span>
+            <div className="flex items-center gap-2 text-sm text-green-500 font-mono font-semibold">
+              <CheckCircle2 className="h-5 w-5" />
+              <span className="tracking-[0.15em] uppercase">Firmware downloaded</span>
             </div>
-            <p className="text-center text-xs text-muted-foreground">
-              Select a device and click "Flash" to write this firmware.
+            <p className="text-sm text-secondary-content font-mono leading-relaxed">
+              SELECT DEVICE AND CLICK FLASH TO WRITE
             </p>
           </>
         )}
 
         {/* Active: Python download error */}
         {pythonDl.phase === "error" && (
-          <Alert variant="destructive" className="text-sm">
-            <XCircle className="h-4 w-4" />
-            <AlertTitle>Download failed</AlertTitle>
-            <AlertDescription>{pythonDl.message}</AlertDescription>
+          <Alert variant="destructive" className="sharp-card rounded-sm px-4 py-3.5">
+            <div className="flex items-start gap-3">
+              <XCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <AlertTitle className="font-mono text-sm uppercase tracking-[0.15em] font-semibold">DOWNLOAD FAILED</AlertTitle>
+                <AlertDescription className="text-sm leading-relaxed mt-1.5">{pythonDl.message}</AlertDescription>
+              </div>
+            </div>
           </Alert>
         )}
 
-        {/* Active: Binary download progress (kept for reference) */}
+        {/* Active: Binary download progress */}
         {isDownloading && (
           <>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
+              <span className="font-mono text-secondary-content">
                 {formatBytes(state.downloadProgress.bytesDownloaded)} /{" "}
                 {formatBytes(state.downloadProgress.totalBytes || state.downloadProgress.bytesDownloaded)}
               </span>
-              <span className="font-mono">{progressPercent.toFixed(1)}%</span>
+              <span className="font-mono text-meta">{progressPercent.toFixed(1)}%</span>
             </div>
-            <Progress value={progressPercent} className="h-2" />
-            <Button variant="outline" size="sm" onClick={cancelBinary} className="gap-1">
-              <XCircle className="h-3.5 w-3.5" />
+            <Progress value={progressPercent} className="h-1.5 steel-progress sharp-card" />
+            <Button variant="outline" size="sm" onClick={cancelBinary} className="gap-2 font-mono text-sm rounded-sm py-2.5 px-5">
+              <span className="icon-hover">
+                <XCircle className="h-4 w-4" />
+              </span>
               Cancel
             </Button>
           </>
@@ -109,35 +124,38 @@ export function DownloadCard() {
         {/* Active: Binary download complete */}
         {isDownloaded && (
           <>
-            <div className="flex items-center justify-center gap-2 text-sm text-green-600 dark:text-green-400">
-              <CheckCircle2 className="h-4 w-4" />
-              <span>Firmware downloaded successfully!</span>
+            <div className="flex items-center gap-2 text-sm text-green-500 font-mono font-semibold">
+              <CheckCircle2 className="h-5 w-5" />
+              <span className="tracking-[0.15em] uppercase">Firmware downloaded</span>
             </div>
-            <p className="text-center text-xs text-muted-foreground">
-              Select a device and click "Flash" to write this firmware.
+            <p className="text-sm text-secondary-content font-mono leading-relaxed">
+              SELECT DEVICE AND CLICK FLASH TO WRITE
             </p>
           </>
         )}
 
         {/* Active: Binary download error */}
         {downloadError && (
-          <Alert variant="destructive" className="text-sm">
-            <XCircle className="h-4 w-4" />
-            <AlertTitle>Download failed</AlertTitle>
-            <AlertDescription>{state.downloadProgress.error}</AlertDescription>
+          <Alert variant="destructive" className="sharp-card rounded-sm px-4 py-3.5">
+            <div className="flex items-start gap-3">
+              <XCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <AlertTitle className="font-mono text-sm uppercase tracking-[0.15em] font-semibold">DOWNLOAD FAILED</AlertTitle>
+                <AlertDescription className="text-sm leading-relaxed mt-1.5">{state.downloadProgress.error}</AlertDescription>
+              </div>
+            </div>
           </Alert>
         )}
 
-        {/* Idle: always show download button when no active state */}
+        {/* Idle */}
         {pythonDl.phase === "idle" && !isDownloading && !isDownloaded && !downloadError && (
           <div className="flex justify-center">
-            <Button size="lg" onClick={() => pythonDl.download()} disabled={false} className="gap-2 px-8">
-              <Download className="h-4 w-4" />
-              Firmware Download
+            <Button size="lg" onClick={() => pythonDl.download()} disabled={false} className="gap-2 font-mono text-sm uppercase tracking-[0.15em] steel-btn rounded-sm py-3.5 px-8">
+              <Download className="h-4.5 w-4.5" />
+              Download Firmware
             </Button>
           </div>
         )}
-
       </CardContent>
     </Card>
   );
