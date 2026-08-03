@@ -5,6 +5,16 @@ Scope: end-to-end system — ESP32 hardware, provisioning, sensor pairing, secur
 Merges: original ESP32 hardware architecture + `Local-First Architecture Storyboard` (mobile/, Pi, Tailscale, FCM/ntfy, Drive).
 
 ---
+## Branch Naming Convention
+Three types of tasks:
+1. Rasberry Pi pie
+2. ESP esp
+3. Mobile app mob
+Name of person working: firstname
+Bitesized task: task
+
+So the branch name will be: type-firstname-task
+
 
 ## Quick nav
 
