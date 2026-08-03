@@ -279,12 +279,21 @@ Home mode uses NetworkManager **manual** IPv4 `192.168.0.236/24` (gateway `192.1
 - Drive token: encrypt at rest before shipping (stub today — README §18)
 - Setup/hub run as root via systemd (nmcli + camera)
 
+## WebRTC lab (MediaMTX)
+
+Low-latency live spike (not yet wired into `pi_hub`): see **[docs/WEBRTC-LAB.md](docs/WEBRTC-LAB.md)**.
+
+- Play LAN: `http://192.168.0.236:8889/cam`
+- Play Tailscale: `http://100.66.51.106:8889/cam`
+- Helpers: `scripts/webrtc-lab-mediamtx.sh`, `scripts/webrtc-lab-publish.sh`
+
 ## Next Steps
 
 1. ✓ SoftAP + boot gate + hub handoff
 2. ✓ `pi_hub` barebones routes matching the mobile `piApi` stubs
-3. ⏭ Real ffmpeg HLS in `pi_hub.live`
-4. ⏭ Real clip record + Drive upload
-5. ⏭ Encrypt Drive token at rest
-6. ⏭ Tailscale install docs / MagicDNS (§13 test 13.4)
-7. ⏭ mDNS optional alternative to static `.236`
+3. ✓ WebRTC lab via MediaMTX + ffmpeg (manual; see `docs/WEBRTC-LAB.md`)
+4. ⏭ Wire `pi_hub.live` to MediaMTX / promote WebRTC in README D4
+5. ⏭ Real clip record + Drive upload
+6. ⏭ Encrypt Drive token at rest
+7. ⏭ Tailscale install docs / MagicDNS (§13 test 13.4)
+8. ⏭ mDNS optional alternative to static `.236`
