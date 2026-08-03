@@ -109,6 +109,19 @@ idf.py build
 idf.py -p /dev/ttyUSB0 flash
 ```
 
+### Build Configuration
+
+This project requires specific sdkconfig and partition settings that differ from defaults:
+
+| Setting | Value | Why |
+|---|---|---|
+| **Flash size** | 8MB (`CONFIG_ESPTOOLPY_FLASHSIZE_8MB`) | Board has 8MB flash (detected via `esptool.py flash_id`) |
+| **TFT pins** | MOSI=11, SCLK=12, MISO=13, CS=10, DC=9, RST=14, BL=15 | Match physical wiring to the TFT_eSPI driver |
+| **Touch** | TOUCH_CS=8, `CONFIG_ENABLE_TOUCH=y` | SPI touch controller on GPIO8 |
+| **Partition table** | Custom `partitions.csv` (factory = `0x1F0000`) | Overrides arduino-esp32's default 1MB partition scheme |
+
+The TFT_eSPI library reads pin configuration from sdkconfig (Kconfig), not from `User_Setup.h`. If you reset menuconfig, you must re-apply these settings.
+
 ---
 
 ## Development Timeline
