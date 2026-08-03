@@ -1,7 +1,9 @@
 [Unit]
-Description=Pi Home Security Setup Service
+Description=Pi Home Security Setup (SoftAP gate)
 After=NetworkManager.service network-online.target
 Wants=NetworkManager.service
+# SoftAP owns :4000 when unconfigured; hub starts only after Wi‑Fi is up.
+Before=pi-hub.service
 
 [Service]
 Type=simple

@@ -12,6 +12,8 @@ SETUP_SSID="HomeSecurity-Setup"
 SETUP_PSK="setup1234"
 WLAN_IF="wlan0"
 API_SCRIPT="/home/koushik/pi-setup-api.py"
+HUB_SERVICE="pi-hub.service"
+HUB_READY_FLAG="/home/koushik/homesecurity/.hub-ready"
 
 # Fixed home-LAN address (ESP / app / deploy scripts assume this)
 STATIC_IP="192.168.0.236"
@@ -129,6 +131,13 @@ softap_is_active() {
 start_softap() {
     log "No WiFi configured or home WiFi failed — starting SoftAP automatically"
 
+    # Hub must not hold :4000 during setup
+    if systemctl is-active "$HUB_SERVICE" >/dev/null 2>&1; then
+        log "Stopping $HUB_SERVICE before SoftAP (free :4000)"
+        systemctl stop "$HUB_SERVICE" || true
+    fi
+    rm -f "$HUB_READY_FLAG"
+
     if systemctl is-active dnsmasq.service >/dev/null 2>&1; then
         systemctl stop dnsmasq.service
     fi
@@ -194,6 +203,13 @@ start_softap() {
 
 log "=== Pi Setup Boot Check ==="
 
+# Always release :4000 before deciding SoftAP vs hub (prevents leftover hub / race).
+rm -f "$HUB_READY_FLAG"
+if systemctl is-active "$HUB_SERVICE" >/dev/null 2>&1; then
+    log "Stopping leftover $HUB_SERVICE"
+    systemctl stop "$HUB_SERVICE" || true
+fi
+
 for _ in $(seq 1 15); do
     if nmcli general status >/dev/null 2>&1; then
         break
@@ -226,6 +242,15 @@ if [ -f "$CREDENTIALS_FILE" ]; then
 
         if nm_log connection up "$SSID"; then
             log "Connected to home WiFi successfully at ${STATIC_CIDR}"
+            # SoftAP API is not running in this path — hand :4000 to the hub.
+            mkdir -p "$(dirname "$HUB_READY_FLAG")"
+            touch "$HUB_READY_FLAG"
+            log "Starting $HUB_SERVICE (live + clips)"
+            if systemctl start "$HUB_SERVICE"; then
+                log "$HUB_SERVICE started"
+            else
+                log "WARNING: failed to start $HUB_SERVICE — check: systemctl status $HUB_SERVICE"
+            fi
             exit 0
         fi
         log "WARNING: Failed to connect to $SSID — falling back to setup SoftAP"

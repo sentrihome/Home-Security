@@ -88,7 +88,8 @@ A complete **WiFi provisioning system** for Raspberry Pi using SoftAP (Access Po
 ├─────────────────────────────────────────┤
 │  boot → checks config → has credentials  │
 │  → connects to home WiFi directly        │
-│  → runs main backend (not setup API)     │
+│  → starts pi_hub (live + clips + Drive)  │
+│     on :4000 — not the SoftAP setup API  │
 └─────────────────────────────────────────┘
 ```
 
@@ -171,22 +172,29 @@ Open Setup tab, follow on-screen instructions.
 - [x] Pi SoftAP + HTTP API
 - [x] Mobile app provisioning UI
 - [x] Boot automation (systemd)
+- [x] SoftAP → hub handoff + `pi_hub` barebones (`/health` `/start` `/stop` `/motion` `/auth/drive`)
+- [ ] Real ffmpeg HLS in `pi_hub.live`
+- [ ] Real clip record + Drive upload (`pi_hub.clips` / `pi_hub.drive`)
+- [ ] Encrypt Drive token at rest
 - [ ] mDNS discovery (`homesecurity.local`) instead of hardcoded IP
-- [ ] HTTPS for API (optional, cert generation)
-- [ ] Multi-Pi support (unique device IDs)
 
-## Files Created
+## Layout
 
 ```
-Home-Security/
-├── pi-setup-api.py           # Flask API server
-├── pi-setup-boot.sh          # Boot logic script
-├── pi-setup.service          # systemd service file
-├── install-pi-setup.sh       # Installation script
-├── PI-SOFTAP-README.md       # Architecture docs
-└── mobile/
-    ├── app/(tabs)/setup.tsx  # Provisioning UI
-    └── README.md             # Updated with SoftAP docs
+rasberry-pi-setup/
+├── pi-setup-api.py           # SoftAP-only Flask (:4000 in setup mode)
+├── pi-setup-boot.sh          # Gate: SoftAP vs start pi-hub
+├── pi_hub/                   # Product hub after home Wi‑Fi
+│   ├── app.py                # One Flask process :4000
+│   ├── live.py               # ffmpeg HLS start/stop
+│   ├── clips.py              # local clip cache
+│   └── drive.py              # token store + upload stub
+├── systemd/
+│   ├── pi-setup.service
+│   └── pi-hub.service
+├── install-pi-setup.sh
+├── deploy-to-pi.sh
+└── requirements.txt
 ```
 
 ## Quick Reference

@@ -1,0 +1,20 @@
+[Unit]
+Description=Pi Home Security Hub (live HLS + clips + Drive)
+After=network-online.target
+Wants=network-online.target
+# Created by pi-setup-boot.sh only after home Wi‑Fi is up.
+ConditionPathExists=/home/koushik/homesecurity/.hub-ready
+
+[Service]
+Type=simple
+WorkingDirectory=/home/koushik
+Environment=PYTHONPATH=/home/koushik
+ExecStart=/usr/bin/python3 -m pi_hub
+Restart=on-failure
+RestartSec=5
+User=root
+StandardOutput=journal
+StandardError=journal
+
+# No [Install] WantedBy — SoftAP boot starts this after Wi‑Fi so SoftAP
+# and hub never both bind :4000. Manual: touch .hub-ready && systemctl start pi-hub

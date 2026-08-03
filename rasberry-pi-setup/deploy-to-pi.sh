@@ -1,29 +1,39 @@
 #!/bin/bash
-# Quick Setup — Copy files to Pi and install
+# Copy SoftAP + hub to the Pi and run the installer.
 
 set -e
 
-PI_IP="192.168.0.236"
-PI_USER="koushik"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PI_IP="${PI_IP:-192.168.0.236}"
+PI_USER="${PI_USER:-koushik}"
 
-echo "=== Copying files to Pi at $PI_IP ==="
+echo "=== Copying rasberry-pi-setup to Pi at $PI_IP ==="
 
-scp pi-setup-api.py pi-setup-boot.sh pi-setup.service install-pi-setup.sh \
-    ${PI_USER}@${PI_IP}:/tmp/
+ssh "${PI_USER}@${PI_IP}" "mkdir -p /tmp/rasberry-pi-setup/systemd"
+
+scp "$SCRIPT_DIR/pi-setup-api.py" \
+    "$SCRIPT_DIR/pi-setup-boot.sh" \
+    "$SCRIPT_DIR/install-pi-setup.sh" \
+    "$SCRIPT_DIR/requirements.txt" \
+    "${PI_USER}@${PI_IP}:/tmp/rasberry-pi-setup/"
+
+scp -r "$SCRIPT_DIR/pi_hub" "${PI_USER}@${PI_IP}:/tmp/rasberry-pi-setup/"
+scp "$SCRIPT_DIR/systemd/"*.service "${PI_USER}@${PI_IP}:/tmp/rasberry-pi-setup/systemd/"
 
 echo ""
 echo "=== Running installer on Pi ==="
-ssh ${PI_USER}@${PI_IP} << 'REMOTE'
-cd /tmp
-chmod +x install-pi-setup.sh
+ssh "${PI_USER}@${PI_IP}" << 'REMOTE'
+cd /tmp/rasberry-pi-setup
+chmod +x install-pi-setup.sh pi-setup-boot.sh
 sudo ./install-pi-setup.sh
 REMOTE
 
 echo ""
 echo "✓ Installation complete!"
 echo ""
-echo "Reboot the Pi to test:"
-echo "  ssh koushik@192.168.0.236 'sudo reboot'"
+echo "Reboot the Pi to test SoftAP → hub handoff:"
+echo "  ssh ${PI_USER}@${PI_IP} 'sudo reboot'"
 echo ""
-echo "After reboot, Pi will be in SoftAP mode."
-echo "Join 'HomeSecurity-Setup' from your phone and open the mobile app."
+echo "After home Wi‑Fi is up:"
+echo "  curl http://${PI_IP}:4000/health"
+echo "  # expect mode: hub"

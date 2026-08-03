@@ -1,47 +1,57 @@
 #!/bin/bash
-# Install Pi SoftAP Setup System
-# Run this on the Pi: ./install-pi-setup.sh
+# Install Pi SoftAP + Hub (live / clips / Drive stubs)
+# Run this on the Pi: sudo ./install-pi-setup.sh
 
 set -e
 
-echo "=== Installing Pi SoftAP Setup System ==="
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PI_HOME="/home/koushik"
 
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then 
+echo "=== Installing Pi SoftAP + Hub ==="
+
+if [ "$EUID" -ne 0 ]; then
     echo "Please run as root: sudo ./install-pi-setup.sh"
     exit 1
 fi
 
-# Install dependencies
 echo "Installing dependencies..."
 apt-get update
-apt-get install -y python3 python3-pip python3-flask jq
+apt-get install -y python3 python3-pip python3-flask jq ffmpeg
 
-# Copy files
-echo "Copying files..."
-cp pi-setup-api.py /home/koushik/
-cp pi-setup-boot.sh /home/koushik/
-chmod +x /home/koushik/pi-setup-boot.sh
-chown koushik:koushik /home/koushik/pi-setup-api.py
-chown koushik:koushik /home/koushik/pi-setup-boot.sh
+if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
+    pip3 install --break-system-packages -r "$SCRIPT_DIR/requirements.txt" 2>/dev/null \
+        || pip3 install -r "$SCRIPT_DIR/requirements.txt" || true
+fi
 
-# Install systemd service
-echo "Installing systemd service..."
-cp pi-setup.service /etc/systemd/system/
+echo "Copying SoftAP files..."
+cp "$SCRIPT_DIR/pi-setup-api.py" "$PI_HOME/"
+cp "$SCRIPT_DIR/pi-setup-boot.sh" "$PI_HOME/"
+chmod +x "$PI_HOME/pi-setup-boot.sh"
+chown koushik:koushik "$PI_HOME/pi-setup-api.py" "$PI_HOME/pi-setup-boot.sh"
+
+echo "Copying pi_hub package..."
+rm -rf "$PI_HOME/pi_hub"
+cp -a "$SCRIPT_DIR/pi_hub" "$PI_HOME/pi_hub"
+chown -R koushik:koushik "$PI_HOME/pi_hub"
+mkdir -p "$PI_HOME/homesecurity/hls" "$PI_HOME/homesecurity/clips"
+chown -R koushik:koushik "$PI_HOME/homesecurity"
+
+echo "Installing systemd units..."
+cp "$SCRIPT_DIR/systemd/pi-setup.service" /etc/systemd/system/
+cp "$SCRIPT_DIR/systemd/pi-hub.service" /etc/systemd/system/
+# Drop legacy unit path if someone still has the old flat copy
+rm -f /etc/systemd/system/pi-setup.service.bak
 systemctl daemon-reload
 systemctl enable pi-setup.service
+# Hub is started by boot after Wi‑Fi (no WantedBy) — unit file is enough.
 
-# Ensure dnsmasq doesn't conflict
 echo "Disabling standalone dnsmasq..."
 systemctl is-active dnsmasq.service && systemctl stop dnsmasq.service || true
 systemctl is-enabled dnsmasq.service && systemctl disable dnsmasq.service || true
 
-# Create log file
 touch /var/log/pi-setup.log
 chmod 644 /var/log/pi-setup.log
 
-# Ensure SoftAP NM profile exists (shows as HomeSecurity-Setup in WiFi menu).
-# Boot script activates it automatically — no manual click required.
 echo "Ensuring SoftAP NetworkManager profile..."
 if ! nmcli -t -f NAME connection show | grep -Fxq "HomeSecurity-Setup"; then
     if nmcli -t -f NAME connection show | grep -Fxq "Hotspot"; then
@@ -60,19 +70,17 @@ if ! nmcli -t -f NAME connection show | grep -Fxq "HomeSecurity-Setup"; then
 fi
 nmcli connection modify HomeSecurity-Setup connection.autoconnect no 2>/dev/null || true
 
-# Apply static home IP to an already-provisioned SSID (if credentials exist).
 STATIC_IP="192.168.0.236"
 STATIC_CIDR="${STATIC_IP}/24"
 STATIC_GATEWAY="192.168.0.1"
 STATIC_DNS="192.168.0.1,8.8.8.8"
-CREDENTIALS_FILE="/home/koushik/wifi-credentials.json"
+CREDENTIALS_FILE="$PI_HOME/wifi-credentials.json"
 
 echo "Ensuring home WiFi uses static IP ${STATIC_CIDR}..."
 HOME_SSID=""
 if [ -f "$CREDENTIALS_FILE" ]; then
     HOME_SSID=$(jq -r '.ssid // empty' "$CREDENTIALS_FILE" 2>/dev/null || true)
 fi
-# Fall back to currently active wlan0 connection (e.g. Koushik)
 if [ -z "$HOME_SSID" ]; then
     HOME_SSID=$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null \
         | awk -F: '$2=="wlan0"{print $1; exit}')
@@ -85,7 +93,6 @@ if [ -n "$HOME_SSID" ] && [ "$HOME_SSID" != "HomeSecurity-Setup" ] && [ "$HOME_S
         ipv4.gateway "$STATIC_GATEWAY" \
         ipv4.dns "$STATIC_DNS" \
         ipv4.ignore-auto-dns yes || true
-    # Refresh address if this profile is already active
     if nmcli -t -f NAME connection show --active 2>/dev/null | grep -Fxq "$HOME_SSID"; then
         nmcli connection up "$HOME_SSID" || true
     fi
@@ -96,15 +103,20 @@ fi
 echo ""
 echo "✓ Installation complete!"
 echo ""
+echo "Layout on Pi:"
+echo "  SoftAP gate:  $PI_HOME/pi-setup-boot.sh + pi-setup-api.py"
+echo "  Hub package:  $PI_HOME/pi_hub/  (live + clips + Drive)"
+echo "  Data:         $PI_HOME/homesecurity/"
+echo ""
+echo "Boot rule:"
+echo "  unconfigured → SoftAP + setup API :4000"
+echo "  home Wi‑Fi   → pi-hub :4000 (GET /health, /start, /stop, /motion, /auth/drive)"
+echo ""
 echo "Next steps:"
-echo "  1. Reboot the Pi: sudo reboot"
-echo "  2. If unconfigured: Pi auto-starts SoftAP (HomeSecurity-Setup) — no WiFi-menu click needed"
-echo "  3. Connect phone and POST credentials to http://10.42.0.1:4000/wifi"
-echo "  4. Pi switches to home WiFi at static ${STATIC_CIDR}"
+echo "  1. Reboot: sudo reboot"
+echo "  2. SoftAP if needed → configure Wi‑Fi → reboot or wait for next boot hub start"
+echo "  3. Health: curl http://${STATIC_IP}:4000/health"
 echo ""
-echo "To reset/reconfigure:"
-echo "  sudo rm /home/koushik/wifi-credentials.json"
-echo "  sudo systemctl restart pi-setup.service"
-echo ""
-echo "View logs:"
-echo "  tail -f /var/log/pi-setup.log"
+echo "Logs:"
+echo "  SoftAP:  tail -f /var/log/pi-setup.log"
+echo "  Hub:     journalctl -u pi-hub -f"

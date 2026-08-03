@@ -37,10 +37,28 @@ Automatic WiFi setup for Raspberry Pi using SoftAP (Access Point) mode.
 │  ├──────────────────────────────────┤                   │
 │  │  • Connects to home WiFi         │                   │
 │  │  • Static IP: 192.168.0.236      │                   │
-│  │  • Backend runs on :4000         │                   │
+│  │  • Starts pi_hub on :4000        │                   │
+│  │    (live HLS + clips + Drive)    │                   │
 │  └──────────────────────────────────┘                   │
 └─────────────────────────────────────────────────────────┘
 ```
+
+## Hub (after home Wi‑Fi)
+
+SoftAP and hub never share `:4000` at the same time. Boot script:
+
+1. SoftAP / unconfigured → `pi-setup-api.py` only  
+2. Home Wi‑Fi OK → touch `.hub-ready` → `systemctl start pi-hub`
+
+| Method | Path | Module |
+|--------|------|--------|
+| GET | `/health` | hub (`mode: hub`) |
+| POST | `/start` `/stop` | `pi_hub.live` |
+| POST | `/motion` | `pi_hub.clips` → `pi_hub.drive` |
+| POST | `/auth/drive` | `pi_hub.drive` |
+| GET | `/hls/<file>` | HLS playlist/segments |
+
+Package: `pi_hub/` · unit: `systemd/pi-hub.service`
 
 ## API Endpoints
 
