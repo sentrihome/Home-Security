@@ -2,6 +2,7 @@
 #include "httpendpoints.h"
 #include "connectivity.h"
 #include "app_uart.h"
+#include "jsonhandler.h"
 
 extern "C" void app_main(void)
 {
@@ -13,7 +14,7 @@ extern "C" void app_main(void)
     uart_init();
 
     while (true){
-        delay(2000);
+        delay(100);
         uart_receive();
     }
 }

@@ -22,6 +22,21 @@ idf.py -p /dev/tty.usbserial-110 monitor
 
 Local dev config in `.vscode/settings.json`: IDF at `~/.espressif/v5.5.2/esp-idf`, target `esp32`, UART port `/dev/tty.usbserial-110`. The project uses minimal build (`idf_build_set_property(MINIMAL_BUILD ON)`) in the root `CMakeLists.txt`.
 
+## Endpoints
+
+| Method | Path | Query Param | Purpose |
+|---|---|---|---|
+| `GET` | `/health` | — | Liveness check, returns `{ "health": "ok" }` |
+| `POST` | `/pass` | `password` | Receive permanent password |
+| `POST` | `/ssid` | `ssid` | Receive Wi-Fi SSID |
+| `POST` | `/permanentpass` | `permanentpass` | Receive permanent pass (redundant with `/pass`) |
+| `POST` | `/encryptedpass` | `encryptedpass` | Receive encrypted password |
+| `POST` | `/otp` | `otp` | Receive one-time password |
+| `POST` | `/schedule` | `schedulestart` | Set schedule start time |
+| `POST` | `/schedule` | `schedulestop` | Set schedule stop time |
+
+All POST handlers extract the named query parameter, forward its value to the UART-connected sensor device, and return a JSON ack.
+
 ## Architecture
 
 ### Entry Point & Runtime (`main/main.cpp`)
@@ -92,6 +107,30 @@ HTTP client ──POST──> HTTP server (port 80)
 **3. Unvalidated forwarding to UART** (all handlers) — Query parameters are passed directly to `uart_send()` with no length, charset, or format validation. Oversized inputs corrupt the 200-byte `uart_message` buffer in `app_uart.cpp`.
 
 **4. Duplicate `/schedule` URI** (`httpendpoints.cpp` lines 178-187) — Both schedule start and stop register the same path/method; esp_http_server silently discards one (last wins). One endpoint is completely broken with no error or warning.
+
+## Dependencies
+
+| Dependency | Version | Source |
+|---|---|---|
+| ESP-IDF | v5.5 | `~/.espressif/v5.5.2/esp-idf` |
+| Arduino-ESP32 | 3.3.7 | `idf_component.yml` |
+| esp_http_server | (ESP-IDF bundled) | `main/CMakeLists.txt` REQUIRES |
+| esp_driver_uart | (ESP-IDF bundled) | `main/CMakeLists.txt` REQUIRES |
+| spi_flash | (ESP-IDF bundled) | `main/CMakeLists.txt` REQUIRES |
+
+## Testing & Dev Container
+
+The project includes a QEMU-based dev container and ESP-IDF pytest harness:
+
+```bash
+# Run pytest tests (requires ESP-IDF with QEMU)
+pytest pytest_hello_world.py -v
+
+# Dev container (QEMU) — see .devcontainer/devcontainer.json
+# Builds and runs the firmware in QEMU for headless testing
+```
+
+The `pytest_hello_world.py` covers: generic target test, macOS host test, Linux host test, and ELF SHA256 embedding verification via QEMU.
 
 ## Notable Current Limitations & Bugs
 
