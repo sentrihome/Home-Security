@@ -15,8 +15,12 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "Installing dependencies..."
-apt-get update
-apt-get install -y python3 python3-pip python3-flask jq ffmpeg
+if [ "${SKIP_APT:-0}" = "1" ]; then
+    echo "SKIP_APT=1 — skipping apt-get (CI quick deploy)"
+else
+    apt-get update
+    apt-get install -y python3 python3-pip python3-flask jq ffmpeg
+fi
 
 if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
     pip3 install --break-system-packages -r "$SCRIPT_DIR/requirements.txt" 2>/dev/null \

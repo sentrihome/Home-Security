@@ -1,8 +1,9 @@
 # Home Security System — Full Architecture
 
-Status: design draft, pre-implementation
+Status: design draft — SoftAP shipping; Pi hub (`pi_hub`) barebones in repo; live/clips/Drive stubs pending full impl
 Scope: end-to-end system — ESP32 hardware, provisioning, sensor pairing, security model, protocol specs, Pi/app/cloud product layer (alerts, live, clips), and known open items.
 Merges: original ESP32 hardware architecture + `Local-First Architecture Storyboard` (mobile/, Pi, Tailscale, FCM/ntfy, Drive).
+Pi software: Python SoftAP gate + one `pi_hub` process (not the retired Node `rasberry_pi_app` / cloud stack) — see **D20** and §13.
 
 ---
 ## Branch Naming Convention
@@ -33,7 +34,7 @@ So the branch name will be: type-firstname-task
 | [10](#10-setup-ap-encryption) | WPA2 requirement on all setup APs |
 | [11](#11-psk-recovery--backup) | Pi as PSK backup, tied to §16 |
 | [12](#12-reboot--reconnect-behavior) | Console/S3/sensor reboot handling |
-| [13](#13-pi-setup--product-hub) | Pi's own SoftAP → home LAN → static IP |
+| [13](#13-pi-setup--product-hub) | SoftAP gate → `pi_hub` (live/clips); how it works & deploy |
 | [14](#14-intruder-alerts-android-fcm--ios-ntfysh) | FCM (Android), ntfy.sh (iOS) |
 | [15](#15-on-demand-livestream-tailscale) | Live only while app is open |
 | [16](#16-pi--s3-link-confirmed-endpoints-transport-tbd) | Confirmed Pi↔S3 endpoints; transport still TBD |
@@ -101,7 +102,7 @@ flowchart TB
 | ESP32-S3 | Central console | Station (home WiFi) | Display, keypad (PIN entry for disarm — see §20), stores home WiFi creds, stores sensor keys, **stores the disarm PIN in NVS**, relays credentials/status to console WROOM over UART. Motion/event relay toward Pi confirmed required — see §16, §20. |
 | ESP32-WROOM (console-side) | Sensor hub / pairing surface | Access Point (persistent, "HomeSecurity" network) | Hosts sensor network, relays sensor data to S3 via UART, validates sensor auth (`sensor_key`), generates pairing credentials and the sensor-network PSK |
 | ESP32-WROOM (sensor units) | Sensors | Station → connects to console WROOM's AP | Motion/door/etc. detection, sends events authenticated with `sensor_key`. Currently the system's only motion-alert trigger — see §19. |
-| Raspberry Pi | Setup relay, PSK backup, product hub | AP (setup only) → Station (post-setup, static IP `192.168.0.236`) | **Initializes first, before console provisioning — see §4, §13.** Runs its own SoftAP setup wizard; serves `GET /health`; owns the system's camera (currently monitoring/live-view only, no motion detection — see §19) and sends motion alerts via FCM (Android) / ntfy.sh (iOS); serves on-demand HLS live over Tailscale; caches clips locally and uploads to the user's Google Drive; stores a backup copy of the sensor-network PSK (pending §16) |
+| Raspberry Pi | Setup relay, PSK backup, product hub | AP (setup only) → Station (post-setup, static IP `192.168.0.236`) | **Initializes first, before console provisioning — see §4, §13.** SoftAP (`pi-setup-*`) then one Python **`pi_hub`** on `:4000` (live HLS, clips, Drive — D20). Owns the camera (monitoring/live only for now — §19); FCM/ntfy alerts; Tailscale live; Drive clip upload; PSK backup pending §16 |
 | Mobile App (React Native, `mobile/`) | Orchestrator / client | N/A | Walks the user through both the Pi setup flow and the console/sensor provisioning flow, holds home WiFi creds in memory only during setup, stores the sensor-network PSK for future pairing, saves the Pi host, registers for push (FCM/ntfy), handles Google OAuth and hands the refresh token to the Pi, plays live (via Tailscale) and clips (via Drive) |
 
 **Confirmed: no camera on any ESP32.** The camera is Pi-attached only, and is monitoring/live-view only for now — camera-based motion detection is a planned post-launch feature, not part of this design. See §19.
@@ -181,6 +182,7 @@ flowchart TB
 | D17 | Sensor-network PSK lifecycle | Never regenerated on WROOM reboot — persists across reboots | Regenerating would force re-pairing every paired sensor, see §12 |
 | D18 | UART link security | Plaintext, trusted via physical enclosure only | Accepted risk given enclosed PCB, not link-layer encrypted — see §9, §23 |
 | D19 | "Encrypted SSID" terminology | Means a high-entropy random **PSK**, not literal SSID encryption | SSIDs broadcast in cleartext regardless — see §7 |
+| D20 | Pi product software | **Python SoftAP + one `pi_hub` process** (Flask); do **not** revive Node `rasberry_pi_app` or cloud `:3001` as product | SoftAP is the boot gate; live + clips share one process so they don't fight over `/dev/video0`. Old Node pushed HLS/clips to cloud — local-first serves HLS from Pi and uploads clips to Drive. Code: `rasberry-pi-setup/`. See §13 |
 
 ---
 
@@ -331,26 +333,98 @@ Open items:
 
 ## 13. Pi Setup & Product Hub
 
-The Pi runs its own independent SoftAP-based setup flow (already implemented, per the existing wizard), separate from the console's provisioning in §4. **Confirmed: this runs first in the unified onboarding flow** — the console's setup (§4) happens after Pi initialization completes, not in parallel and not the other way around.
+The Pi runs its own independent SoftAP-based setup flow (implemented under `rasberry-pi-setup/`), separate from the console's provisioning in §4. **Confirmed: this runs first in the unified onboarding flow** — the console's setup (§4) happens after Pi initialization completes, not in parallel and not the other way around.
 
-1. Unconfigured Pi boots its own SoftAP (`HomeSecurity-Setup`).
-2. User joins the Pi's SoftAP; app wizard sends home WiFi credentials.
-3. Pi joins home LAN at a static IP (`192.168.0.236`, currently enforced on-device).
-4. App verifies the Pi (`GET /health`), saves the Pi host.
-5. User installs Tailscale on Pi and phone (same tailnet); MagicDNS or `100.x` host noted for live streaming (§15).
-6. *(Future)* App pairs a long-lived device token with the Pi for API auth — recommended to double as the auth mechanism for the §16 PSK backup push.
+**D20 (locked):** keep SoftAP in Python; run live + clips + Drive as modules of **one** hub process (`pi_hub`). Do not bring back the old Node `rasberry_pi_app` / cloud-backend split as the product path. SoftAP is the **network gate**; the hub starts only after home Wi‑Fi is up. SoftAP and hub never both bind `:4000`.
+
+### How it works
+
+```
+Boot → pi-setup.service → pi-setup-boot.sh
+         │
+         ├─ no / bad Wi‑Fi  → SoftAP HomeSecurity-Setup + pi-setup-api.py :4000
+         │                     (GET /status, /scan, POST /wifi)
+         │                     hub stopped; .hub-ready removed
+         │
+         └─ Wi‑Fi OK at 192.168.0.236
+                              → touch ~/homesecurity/.hub-ready
+                              → systemctl start pi-hub
+                              → one Flask process :4000 (live + clips + Drive)
+```
+
+| Piece | Kind | When |
+|--------|------|------|
+| `pi-setup-boot.sh` + SoftAP API | bash + small Flask | Always / unconfigured |
+| `pi_hub` (`app.py` + `live` / `clips` / `drive`) | one Python app | Configured + on LAN |
+| ffmpeg | subprocess from `live` / `clips` | On demand — not a separate daemon |
+
+**Onboarding steps (product):**
+
+1. Unconfigured Pi boots SoftAP (`HomeSecurity-Setup`).
+2. User joins SoftAP; app sends home WiFi credentials (`POST /wifi`).
+3. Pi joins home LAN at static IP `192.168.0.236`.
+4. App verifies hub (`GET /health` → `mode: "hub"`), saves Pi host.
+5. User installs Tailscale on Pi and phone (same tailnet); MagicDNS or `100.x` for live (§15).
+6. *(Future)* App pairs a long-lived device token with the Pi for API auth — recommended to also auth §16 PSK backup.
+
+**Hub API (after Wi‑Fi; stubs in repo, full ffmpeg/Drive TBD):**
+
+| Method | Path | Module |
+|--------|------|--------|
+| GET | `/health` | hub (`mode: hub`) |
+| POST | `/start` `/stop` | `pi_hub.live` — on-demand HLS |
+| POST | `/motion` | `pi_hub.clips` → `pi_hub.drive` |
+| POST | `/auth/drive` | `pi_hub.drive` — refresh token from app |
+| GET | `/hls/<file>` | HLS playlist/segments |
+
+Repo layout: `rasberry-pi-setup/pi_hub/`, units in `rasberry-pi-setup/systemd/`. Detail + troubleshooting: [`rasberry-pi-setup/PI-SOFTAP-README.md`](rasberry-pi-setup/PI-SOFTAP-README.md).
+
+### Deploying changes to the Pi
+
+**CI (every push under `rasberry-pi-setup/`):** GitHub Actions workflow [`.github/workflows/pi-deploy.yml`](.github/workflows/pi-deploy.yml) SSHs to the Pi (via Tailscale when `TS_AUTHKEY` is set), `git fetch` + checkout of that commit, runs `rasberry-pi-setup/scripts/ci-pull-deploy.sh` (install + restart `pi-hub`). Secrets and one-time Pi bootstrap: [`PI-SOFTAP-README.md`](rasberry-pi-setup/PI-SOFTAP-README.md) → **CI deploy**.
+
+**Manual from a LAN machine** (Pi at `192.168.0.236`, user `koushik`):
+
+```bash
+cd rasberry-pi-setup
+./deploy-to-pi.sh
+# optional: PI_IP=192.168.0.236 PI_USER=koushik ./deploy-to-pi.sh
+```
+
+What that does:
+
+1. Copies SoftAP scripts, `pi_hub/`, `systemd/*.service`, and `requirements.txt` to `/tmp/rasberry-pi-setup` on the Pi.
+2. Runs `sudo ./install-pi-setup.sh` on the Pi — installs deps (Flask, ffmpeg, jq), copies files to `/home/koushik/`, installs systemd units, enables `pi-setup.service`.
+3. Hub is **not** auto-enabled for multi-user boot by itself; `pi-setup-boot.sh` starts `pi-hub` only after home Wi‑Fi succeeds.
+
+**After manual deploy:**
+
+```bash
+ssh koushik@192.168.0.236 'sudo reboot'   # clean SoftAP → hub handoff
+# once on home Wi‑Fi:
+curl http://192.168.0.236:4000/health     # expect "mode":"hub"
+```
+
+**Iterate without full reinstall** (hub code only, Pi already provisioned):
+
+```bash
+scp -r rasberry-pi-setup/pi_hub koushik@192.168.0.236:/home/koushik/
+ssh koushik@192.168.0.236 'sudo touch /home/koushik/homesecurity/.hub-ready && sudo systemctl restart pi-hub'
+```
+
+**Logs:** SoftAP → `tail -f /var/log/pi-setup.log` · Hub → `journalctl -u pi-hub -f`
 
 ### Test protocol
 
 | # | Step | Expected |
 |---|---|---|
 | 13.1 | Pi in SoftAP or already on LAN | Setup screen usable |
-| 13.2 | Complete SoftAP creds; phone on home WiFi | `GET http://192.168.0.236:4000/health` succeeds |
+| 13.2 | Complete SoftAP creds; phone on home WiFi | `GET http://192.168.0.236:4000/health` succeeds with `mode: hub` |
 | 13.3 | Kill and reopen app | Saved Pi host still present |
 | 13.4 | Tailscale connected on Pi and phone | Both show in `tailscale status`; ping works |
 | 13.5 | **Fail:** phone on cellular, Tailscale off, hit LAN IP | Health fails; clear "unreachable" UI, not a hang |
 
-**Failure modes:** SoftAP scan fails → not on `HomeSecurity-Setup`. Health 404/timeout → backend not listening on `:4000`. Wrong subnet → static IP mismatch.
+**Failure modes:** SoftAP scan fails → not on `HomeSecurity-Setup`. Health 404/timeout → hub not started or still in SoftAP-only mode. Wrong subnet → static IP mismatch. Port conflict → SoftAP API and hub both tried to bind `:4000` (boot script should prevent this).
 
 ---
 
@@ -561,7 +635,8 @@ This is the same pipeline established in §19, terminating in a **phone push not
 | S3 / cloud-backend as clip or live CDN | Retired — local-first + Drive instead (D10) |
 | Cloudflare Tunnel / ngrok as **product** remote access | Tailscale chosen (D8); ngrok OK for brief dev only |
 | Sensor AP-mode fallback on disconnect | Explicitly rejected — jamming risk (D12) |
-| Replacing the existing Pi SoftAP wizard | Keep as-is; extend later |
+| Replacing the existing Pi SoftAP wizard | Keep SoftAP; extend with `pi_hub` after Wi‑Fi (D20) |
+| Reviving Node `rasberry_pi_app` + cloud `:3001` as product | Retired — Python hub serves HLS locally and uploads clips to Drive (D10, D20); mine old Node only for ffmpeg ideas if found elsewhere |
 | Relying on Expo Go for FCM | Push unreliable under Expo Go; use dev/prod builds |
 | Local buzzer/siren hardware on the console (v1) | Confirmed: no beep/audio hardware planned for initial release — see §20 |
 | Bluetooth speaker pairing as a local siren | Confirmed roadmap item, post-launch — not part of this design pass |
@@ -605,3 +680,4 @@ Consolidated list, roughly in priority order for what blocks further design vs. 
 | 2026-08-02 | Resolved PIN-validation ownership: S3 validates the PIN locally, Pi is informed afterward (§20). Confirmed PIN-set flow: Phone App → Pi → console WROOM → console S3, with acknowledgment back. Flagged a new topology inconsistency: this flow has the Pi talking to the WROOM directly, which conflicts with the WROOM's documented lack of home-LAN connectivity — needs resolution before §16 can be designed (§16, §20, §22 item 1, now top priority). Added conditional UART command for PIN relay/ack (§9). |
 | 2026-08-02 | Resolved the topology question from the previous entry: **confirmed the Pi talks directly to the S3, not the WROOM.** Renamed §16 to "Pi ↔ S3 Link (Confirmed Endpoints, Transport TBD)." Removed the WROOM hop from the PIN-set flow (§20) and the conditional UART command it required (§9) — the disarm PIN never touches the WROOM. Updated D9, quick-nav, and all cross-references accordingly. Removed the now-resolved topology item from Open Items (§22). |
 | 2026-08-02 | **Full-document audit for repeated/systemic issues.** Fixed: duplicated "Terminology note" paragraph in §7 (verbatim copy-paste artifact); stale §4 step 9 still saying the WROOM pushes the PSK to the Pi (contradicted the confirmed Pi↔S3-only topology, now corrected to WROOM→S3→Pi); stale §1 diagram/prose still framing the S3-Pi link as fully unspecified and labeled "Act 6" (updated to reflect confirmed endpoints, transport TBD); §2.1 diagram not reflecting the confirmed keypad/PIN-in-NVS hardware (added). Flagged a new open item: whether arm/disarm state propagates to individual sensors or is enforced centrally (§9, §22 item 2) — §9's "commands relayed onward to sensors" line and §20's "sensors relay only while armed" line don't obviously describe the same mechanism. Noted as a general pattern: diagrams in this document have repeatedly lagged behind text-level decisions and need a deliberate check on each revision, not just prose cross-references. |
+| 2026-08-03 | **D20 — Pi software stack.** SoftAP stays Python; product features run as one `pi_hub` Flask process after home Wi‑Fi (live HLS + clips + Drive stubs). Explicitly rejected reviving Node `rasberry_pi_app` / cloud `:3001` as product. Expanded §13 with boot handoff, hub API table, and deploy instructions (`deploy-to-pi.sh`). Updated §2 Pi row, §21 out-of-scope, and `rasberry-pi-setup` docs. |
