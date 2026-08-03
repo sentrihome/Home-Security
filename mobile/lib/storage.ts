@@ -6,6 +6,7 @@ import type { AuthSession } from '@/types';
 
 const SESSION_KEY = 'homesecurity.auth.session';
 const CLOUD_URL_KEY = 'homesecurity.cloud.baseUrl';
+const PI_HOST_KEY = 'homesecurity.pi.host';
 const ESP_RANDOM_PASS_KEY = 'homesecurity.esp.randomPass';
 
 async function setItem(key: string, value: string) {
@@ -57,6 +58,18 @@ export async function loadCloudBaseUrl(): Promise<string | null> {
   return getItem(CLOUD_URL_KEY);
 }
 
+export async function savePiHost(host: string) {
+  await setItem(PI_HOST_KEY, host);
+}
+
+export async function loadPiHost(): Promise<string | null> {
+  return getItem(PI_HOST_KEY);
+}
+
+export async function clearPiHost() {
+  await deleteItem(PI_HOST_KEY);
+}
+
 export async function saveEspRandomPassword(pass: string) {
   await setItem(ESP_RANDOM_PASS_KEY, pass);
 }
@@ -68,4 +81,3 @@ export async function loadEspRandomPassword(): Promise<string | null> {
 export async function clearEspRandomPassword() {
   await deleteItem(ESP_RANDOM_PASS_KEY);
 }
-

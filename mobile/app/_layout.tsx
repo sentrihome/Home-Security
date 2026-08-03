@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { SetupWizardProvider } from '@/context/SetupWizardContext';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -16,7 +17,9 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <SetupWizardProvider>
+        <RootLayoutNav />
+      </SetupWizardProvider>
     </AuthProvider>
   );
 }

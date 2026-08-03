@@ -1,0 +1,18 @@
+[Unit]
+Description=Pi Home Security Setup Service
+After=NetworkManager.service network-online.target
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/home/koushik/pi-setup-boot.sh
+Restart=on-failure
+RestartSec=5
+User=root
+# Boot script logs to /var/log/pi-setup.log itself; keep journal for systemd events only.
+SuccessExitStatus=0
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
