@@ -10,6 +10,7 @@ import * as esp from '@/lib/esp';
 import {
   PERMANENT_PASS_ALLOWED,
   PERMANENT_PASS_LENGTH,
+  generateOtp,
   generateRandomPassword,
   isValidPermanentPass,
 } from '@/lib/pairing';
@@ -47,6 +48,12 @@ export default function SetupScreen() {
   const [deviceId, setDeviceId] = useState('');
   const [linkStatus, setLinkStatus] = useState('');
   const [linkBusy, setLinkBusy] = useState(false);
+  // TEMP: debug panel for sendOneTimePass + sendSchedule. Remove when drawer UI exists.
+  const [otpDisplay, setOtpDisplay] = useState('');
+  const [armTime, setArmTime] = useState('');
+  const [disarmTime, setDisarmTime] = useState('');
+  const [debugStatus, setDebugStatus] = useState('');
+  const [debugBusy, setDebugBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -186,7 +193,44 @@ export default function SetupScreen() {
       setBusy(false);
     }
   }
+  function generateAndShowOtp() {
+  setOtpDisplay(generateOtp());
+  setDebugStatus('OTP generated. Tap Send OTP to push it to the ESP.');
+}
 
+async function sendOtp() {
+  if (!otpDisplay) {
+    setDebugStatus('Generate an OTP first.');
+    return;
+  }
+  setDebugBusy(true);
+  setDebugStatus('Sending OTP...');
+  try {
+    const response = await esp.sendOneTimePass(otpDisplay);
+    setDebugStatus(`OTP sent. Response: ${response.slice(0, 200)}`);
+  } catch (err) {
+    setDebugStatus(`OTP failed: ${errMsg(err)}`);
+  } finally {
+    setDebugBusy(false);
+  }
+}
+
+async function sendSchedule() {
+  if (!armTime.trim() || !disarmTime.trim()) {
+    setDebugStatus('Enter both arm and disarm times (HH:MM).');
+    return;
+  }
+  setDebugBusy(true);
+  setDebugStatus('Sending schedule...');
+  try {
+    const response = await esp.sendSchedule(armTime.trim(), disarmTime.trim());
+    setDebugStatus(`Schedule sent. Response: ${response.slice(0, 200)}`);
+  } catch (err) {
+    setDebugStatus(`Schedule failed: ${errMsg(err)}`);
+  } finally {
+    setDebugBusy(false);
+  }
+}
   async function linkDevice() {
     if (!session?.token) {
       setLinkStatus('Sign in first.');
@@ -243,6 +287,7 @@ export default function SetupScreen() {
           value={wifiSsid}
           onChangeText={setWifiSsid}
           placeholder="Home Wi-Fi SSID"
+          placeholderTextColor="#9ca3af"
           autoCapitalize="none"
           autoCorrect={false}
           editable={!wifiCredsSent}
@@ -252,6 +297,7 @@ export default function SetupScreen() {
           value={wifiPassword}
           onChangeText={setWifiPassword}
           placeholder="Home Wi-Fi password"
+          placeholderTextColor="#9ca3af"
           autoCapitalize="none"
           autoCorrect={false}
           editable={!wifiCredsSent}
@@ -275,6 +321,7 @@ export default function SetupScreen() {
           value={permanentPass}
           onChangeText={onPermanentPassChange}
           placeholder="e.g. 1234ABCD"
+          placeholderTextColor="#9ca3af"
           autoCapitalize="characters"
           autoCorrect={false}
           editable={!permanentPassSent}
@@ -352,6 +399,7 @@ export default function SetupScreen() {
           value={deviceId}
           onChangeText={setDeviceId}
           placeholder="device-id"
+          placeholderTextColor="#9ca3af"
           autoCapitalize="none"
           autoCorrect={false}
           style={styles.input}
@@ -364,6 +412,58 @@ export default function SetupScreen() {
         />
         {linkStatus ? <Text style={styles.helper}>{linkStatus}</Text> : null}
       </View>
+        <View style={styles.divider} />
+
+  <View style={styles.card}>
+    <Text style={styles.section}>Debug — OTP & Schedule</Text>
+    <Text style={styles.helper}>
+      Temporary. Remove once the drawer UI is built.
+    </Text>
+
+    {otpDisplay ? (
+      <View style={styles.passCard}>
+        <Text style={styles.passText}>{otpDisplay}</Text>
+      </View>
+    ) : null}
+    <PrimaryButton
+      label="Generate OTP"
+      variant="secondary"
+      onPress={generateAndShowOtp}
+    />
+    <PrimaryButton
+      label="Send OTP to ESP"
+      loading={debugBusy}
+      disabled={!otpDisplay}
+      onPress={sendOtp}
+    />
+
+    <TextInput
+      value={armTime}
+      onChangeText={setArmTime}
+      placeholder="Arm time (HH:MM)"
+      placeholderTextColor="#9ca3af"
+      autoCapitalize="none"
+      autoCorrect={false}
+      style={styles.input}
+    />
+    <TextInput
+      value={disarmTime}
+      onChangeText={setDisarmTime}
+      placeholder="Disarm time (HH:MM)"
+      placeholderTextColor="#9ca3af"
+      autoCapitalize="none"
+      autoCorrect={false}
+      style={styles.input}
+    />
+    <PrimaryButton
+      label="Send schedule"
+      loading={debugBusy}
+      disabled={!armTime.trim() || !disarmTime.trim()}
+      onPress={sendSchedule}
+    />
+
+    {debugStatus ? <Text style={styles.helper}>{debugStatus}</Text> : null}
+  </View>
     </Screen>
   );
 }
@@ -491,6 +591,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
   },
   statusCard: {
     padding: 12,
@@ -500,6 +602,7 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 13,
     lineHeight: 18,
+    color: '#0f172a',
   },
   passCard: {
     padding: 12,
@@ -510,6 +613,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     letterSpacing: 1,
+    color: '#0f172a',
   },
   doneCard: {
     gap: 10,

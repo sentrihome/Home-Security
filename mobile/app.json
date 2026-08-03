@@ -9,7 +9,13 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.sinisterchiller.homesecurity"
+      "bundleIdentifier": "com.sinisterchiller.homesecurity",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Used to pair your home-security ESP32 device on your local Wi-Fi.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +25,14 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "package": "com.sinisterchiller.homesecurity",
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.CHANGE_WIFI_STATE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.NEARBY_WIFI_DEVICES"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -36,6 +49,14 @@
           "resizeMode": "contain",
           "backgroundColor": "#0f172a"
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
       ]
     ],
     "experiments": {
@@ -43,3 +64,4 @@
     }
   }
 }
+
