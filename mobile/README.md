@@ -14,7 +14,7 @@ Mobile client framework for the Home Security stack. Mirrors the main flows from
 |------|--------|--------|
 | Live stream | `(tabs)/index` | Pi start/stop/motion + cloud status stubs |
 | Clips | `(tabs)/clips` | `GET /api/events` + thumbnail URLs |
-| Setup | `(tabs)/setup` | Device link stub; ESP32 SoftAP/BLE TBD |
+| Setup | `(tabs)/setup` | Pi SoftAP provisioning + device linking |
 | Settings | `(tabs)/settings` | Cloud URL + account |
 | Sign in | `/login` | Token paste until OAuth deep links are wired |
 
@@ -54,9 +54,24 @@ EXPO_PUBLIC_PI_URL=http://192.168.x.x:4000
 - **iOS simulator → host:** `http://localhost:3001`
 - **Physical device:** LAN IP or ngrok (same URL as Google OAuth redirect / `credentials.json`)
 
+## Features
+
+### Pi SoftAP Provisioning ✓
+
+First-time WiFi setup for Raspberry Pi:
+
+1. User joins Pi hotspot (`HomeSecurity-Setup` / `setup1234`)
+2. App scans available WiFi networks via `http://10.42.0.1:4000/scan`
+3. User selects home network and enters password
+4. App sends credentials via `POST http://10.42.0.1:4000/wifi`
+5. Pi switches to home WiFi automatically
+6. User reconnects phone to home WiFi and links device
+
+See `../PI-SOFTAP-README.md` for Pi setup instructions.
+
 ## Next wiring targets
 
-1. Complete Google OAuth via `homesecurity://` deep link after `/auth/google/callback`
-2. HLS player for `cloudApi.playlistUrl(deviceId, token)`
-3. Port ESP32 SoftAP / BLE pairing from `ESP32PairingApp`
+1. ✓ Pi SoftAP provisioning (setup screen)
+2. Complete Google OAuth via `homesecurity://` deep link after `/auth/google/callback`
+3. HLS player for `cloudApi.playlistUrl(deviceId, token)`
 4. Clip video playback using `cloudApi.clipUrl(eventId, token)`

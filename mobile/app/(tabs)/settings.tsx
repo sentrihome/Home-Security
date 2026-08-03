@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, TextInput } from 'react-native';
 import { Link, router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -7,17 +7,29 @@ import { Text, View } from '@/components/Themed';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { useAuth } from '@/context/AuthContext';
+import { useSetupWizard } from '@/context/SetupWizardContext';
 import { cloudApi } from '@/lib/api';
 import { config } from '@/lib/config';
 
 export default function SettingsScreen() {
   const { session, isLoggedIn, cloudBaseUrl, setCloudBaseUrl, signOut } = useAuth();
+  const { piHost, piBaseUrl, setPiHost } = useSetupWizard();
   const [urlDraft, setUrlDraft] = useState(cloudBaseUrl);
+  const [piHostDraft, setPiHostDraft] = useState(piHost);
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    setPiHostDraft(piHost);
+  }, [piHost]);
 
   async function saveUrl() {
     await setCloudBaseUrl(urlDraft);
     setMessage('Cloud URL saved.');
+  }
+
+  async function savePiHostUrl() {
+    await setPiHost(piHostDraft);
+    setMessage('Pi host saved.');
   }
 
   async function openGoogleAuth() {
@@ -75,8 +87,25 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.card}>
+        <Text style={styles.section}>Pi host / IP</Text>
+        <Text style={styles.hint}>
+          Static LAN address of the Raspberry Pi (port 4000). Saved from SoftAP setup or
+          edit manually here.
+        </Text>
+        <TextInput
+          value={piHostDraft}
+          onChangeText={setPiHostDraft}
+          placeholder="192.168.0.236"
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={styles.input}
+        />
+        <Text style={styles.meta}>Resolved: {piBaseUrl}</Text>
+        <PrimaryButton label="Save Pi host" onPress={savePiHostUrl} />
+      </View>
+
+      <View style={styles.card}>
         <Text style={styles.section}>Defaults</Text>
-        <Text style={styles.meta}>Pi: {config.piBaseUrl}</Text>
         <Text style={styles.meta}>Scheme: {config.appScheme}</Text>
         <PrimaryButton
           label="Go to live"

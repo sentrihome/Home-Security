@@ -1,0 +1,7 @@
+{
+  "version": "v1.0.0",
+  "releaseNotes": "Initial firmware release with WiFi and Bluetooth support.",
+  "downloadUrl": "https://github.com/espressif/esp-idf/releases/download/v5.3.1/esp-idf-v5.3.1.zip",
+  "sizeBytes": 268435456,
+  "publishedAt": "2026-07-31T00:00:00Z"
+}

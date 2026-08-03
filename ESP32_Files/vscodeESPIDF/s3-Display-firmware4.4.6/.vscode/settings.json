@@ -13,5 +13,5 @@
   },
   "idf.flashType": "UART",
   "CodeGPT.apiKey": "CodeGPT Plus Beta",
-  "idf.currentSetup": "/Users/anuragkoushik/Desktop/Deployment/HomeSecurity-local/v4.4.6/esp-idf"
+  "idf.currentSetup": "/Users/anuragkoushik/Desktop/Deployment/Home-Security/ESPFirmwareV2/centralconsole/esp-idf"
 }
