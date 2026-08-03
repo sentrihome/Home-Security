@@ -1,7 +1,7 @@
 # Local-First Architecture Storyboard
 
 > **Status:** `Draft` · **Stack:** React Native (`mobile/`) · **Docs only** (no feature code in this revision)  
-> **Last updated:** 2026-08-02  
+> **Last updated:** 2026-08-03  
 > Edit this file on GitHub: open → pencil → change one Act or one Decision Log row → commit.
 
 ---
@@ -39,6 +39,7 @@
 | D8 | Remote product tunnel | Tailscale (not ngrok/Cloudflare as product) | 2026-08-02 | ngrok OK for ad-hoc dev only |
 | D9 | ESP ↔ Pi discovery | **TBD** | 2026-08-02 | mDNS or static IP — see Act 6 |
 | D10 | Cloud S3 / cloud-backend clips | Retire as product path | 2026-08-02 | Local-first + Drive instead |
+| D20 | Pi product software | Python SoftAP + one `pi_hub` (not Node `rasberry_pi_app`) | 2026-08-03 | Canonical: root README D20 / §13; deploy via `rasberry-pi-setup/deploy-to-pi.sh` |
 
 ---
 
@@ -128,10 +129,11 @@ sequenceDiagram
 
 ### Build checklist
 
-- [ ] SoftAP → home Wi‑Fi → verify LAN health (existing wizard)
+- [x] SoftAP → home Wi‑Fi → hub handoff (`pi_hub` on `:4000`) — see `PI-SOFTAP-README.md`
 - [ ] Persist Pi host in app storage / Settings
 - [ ] Document Tailscale install steps for Pi + phone
 - [ ] Define app↔Pi paired token API (future PR)
+- [ ] Real ffmpeg live + Drive upload (stubs in `pi_hub/`)
 
 ### Test protocol — Act 1
 
@@ -348,7 +350,8 @@ curl -d "Intruder detected" \
 | Persistent WebSocket / SSE for alerts | Replaced by FCM + ntfy |
 | S3 / cloud-backend as clip or live CDN | Local-first + Drive |
 | Cloudflare Tunnel / ngrok as **product** remote access | Tailscale chosen; ngrok OK for brief dev |
-| Replacing SoftAP Pi Wi‑Fi wizard | Keep; extend later |
+| Replacing SoftAP Pi Wi‑Fi wizard | Keep SoftAP; extend with `pi_hub` after Wi‑Fi (D20) |
+| Reviving Node `rasberry_pi_app` + cloud `:3001` as product | Retired — Python hub (README D20) |
 | Implementing ESP discovery in this doc’s “done” criteria | Act 6 is explicitly TBD |
 | Relying on Expo Go for FCM | Use dev/prod builds |
 
@@ -384,3 +387,4 @@ curl -d "Intruder detected" \
 | Date | Change |
 |------|--------|
 | 2026-08-02 | Initial draft: FCM Android, ntfy.sh iOS, Tailscale live-on-demand, Drive clips + OAuth handoff, ESP TBD |
+| 2026-08-03 | D20: Python SoftAP + `pi_hub`; reject Node cloud hub as product; Act 1 checklist points at deploy docs |

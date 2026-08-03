@@ -58,17 +58,16 @@ Build the part of the system that has zero external dependencies (no Pi, no app,
 
 ---
 
-## Phase 3 — Pi baseline (mostly already built)
+## Phase 3 — Pi baseline (SoftAP shipping; hub barebones in tree)
 
-Per the Storyboard, the Pi's own SoftAP wizard, static IP, and `/health` endpoint already exist. This phase is about validating and extending, not building from scratch.
+Per D20 / README §13: SoftAP is the boot gate; `pi_hub` is one Flask process after home Wi‑Fi (live + clips + Drive stubs). Old Node `rasberry_pi_app` is **not** the product path.
 
-- [ ] Confirm the existing Pi setup flow (§13) matches the documented test protocol (§13's table) — run it fresh, don't assume it still passes.
-
-- [ ] Confirm Pi initializes **before** console provisioning in the unified onboarding sequence, per the confirmed ordering (§4, §13) — check the app's onboarding UI actually enforces this order rather than leaving it to chance.
-
-- [ ] Implement Tailscale install/pairing instructions and verify MagicDNS/`100.x` reachability (§13 test 13.4).
-
-- [ ] Build the "paired device token" API auth (§13 step 6, currently a future item) — this is now a dependency for Phase 0's PSK-backup-auth decision, so pull it forward if it isn't built yet.
+- [x] SoftAP wizard + static IP + boot handoff → `pi_hub` (`rasberry-pi-setup/`)
+- [ ] Confirm the Pi setup flow matches §13's test protocol — run it fresh after deploy.
+- [ ] Confirm Pi initializes **before** console provisioning in the app onboarding UI (§4, §13).
+- [ ] Implement Tailscale install/pairing instructions and verify MagicDNS/`100.x` (§13 test 13.4).
+- [ ] Fill in real ffmpeg HLS (`pi_hub.live`) and Drive upload (`pi_hub.drive`) — stubs exist.
+- [ ] Build the "paired device token" API auth (§13 step 6) — dependency for PSK-backup-auth.
 
 ---
 
