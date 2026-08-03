@@ -6,11 +6,12 @@ import { Text, View } from '@/components/Themed';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { useAuth } from '@/context/AuthContext';
+import { useSetupWizard } from '@/context/SetupWizardContext';
 import { cloudApi, piApi } from '@/lib/api';
-import { config } from '@/lib/config';
 
 export default function LiveScreen() {
   const { isLoggedIn, session, cloudBaseUrl } = useAuth();
+  const { piBaseUrl } = useSetupWizard();
   const [status, setStatus] = useState('Idle');
   const [busy, setBusy] = useState(false);
 
@@ -46,7 +47,7 @@ export default function LiveScreen() {
 
       <View style={styles.card}>
         <Text style={styles.section}>Pi backend</Text>
-        <Text style={styles.meta}>{config.piBaseUrl}</Text>
+        <Text style={styles.meta}>{piBaseUrl}</Text>
         <PrimaryButton
           label="Start webcam stream"
           loading={busy}
