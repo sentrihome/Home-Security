@@ -1,5 +1,4 @@
 #include "httpendpoints.h"
-#include "app_uart.h"
 
 esp_err_t api_health_resp(httpd_req_t *r) {
     return httpd_resp_sendstr(r, "{ \"health\": \"ok\" }");
@@ -27,6 +26,35 @@ esp_err_t api_pair_resp(httpd_req_t *r) {
     
     std::string encrypted_pass = jsonparser(buf, "encryptedpass");
     printf("Encrypted Pass: %s\n", encrypted_pass.c_str());
+
+    std::string schedule_start = jsonparser(buf, "schedulestart");
+    printf("Schedule Start: %s\n", schedule_start.c_str());
+
+    std::string schedule_stop = jsonparser(buf, "schedulestop");
+    printf("Schedule Stop: %s\n", schedule_stop.c_str());
+
+    std::string raspberrypi_ip = jsonparser(buf, "raspberrypiip");
+    printf("RaspberryPi IP: %s\n", raspberrypi_ip.c_str());
+
+    pair.send(buf);
+    printf("Relayed the data through UART");
+
+    int timeout = 0;
+    while (timeout <= 30)
+    {
+        printf("Awaiting S3 Confirmation\n");
+        std::string response_full = pair.receive();
+        std::string response_partsed = jsonparser(response_full.c_str(), "pairing payload");
+        if (response_partsed == "received")
+        {
+            printf("Received Confirmation from S3\n");
+            return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"ok\" }");
+        }
+        timeout++;
+        if (timeout == 30)
+            return httpd_resp_send_408(r);
+    }
+
     return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"ok\" }");
 }
 

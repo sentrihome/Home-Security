@@ -1,9 +1,9 @@
 #include "display.h"
 #include "connectivity.h"
-#include "httpendpoints.h"
 #include "app_uart.h"
 
 Display display;
+
 
 // void setup(){
 //   Serial.begin(115200);
@@ -22,12 +22,11 @@ extern "C" void app_main(void) {
   Serial.begin(115200);
   delay(10);
   wifi_init();
-  // endpoint_init();
-  uart_init();
+  uart.init();
   
   while(true){
     display.init();
     display.process();
-    uart_receive();
+    pair.receive();
   }
 }

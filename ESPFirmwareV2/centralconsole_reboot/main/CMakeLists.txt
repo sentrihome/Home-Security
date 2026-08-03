@@ -1,4 +1,4 @@
-idf_component_register(SRCS "app_uart.cpp" "httpendpoints.cpp" "connectivity_esp.cpp" "main.cpp"
+idf_component_register(SRCS "jsonhandler.cpp" "app_uart.cpp" "connectivity_esp.cpp" "main.cpp"
                             "core.cpp"
                             "display.cpp"
                             "uielements.c"

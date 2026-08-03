@@ -4,6 +4,7 @@
 #include "app_uart.h"
 #include "jsonhandler.h"
 
+
 extern "C" void app_main(void)
 {
     initArduino();
@@ -11,10 +12,9 @@ extern "C" void app_main(void)
     delay(10);
     wifi_init();
     endpoint_init();
-    uart_init();
+    uart.init();
 
     while (true){
-        delay(100);
-        uart_receive();
-    }
+        delay(100); 
+   }
 }
