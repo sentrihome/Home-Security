@@ -1,0 +1,26 @@
+# Lab config for Home Security WebRTC (LAN + Tailscale).
+# Auth off — lab only; add auth before exposing beyond your tailnet.
+# See rasberry-pi-setup/docs/WEBRTC-LAB.md
+
+logLevel: info
+
+rtsp: true
+rtspAddress: :8554
+
+webrtc: true
+webrtcAddress: :8889
+webrtcAllowOrigins: ["*"]
+webrtcIPsFromInterfaces: true
+webrtcAdditionalHosts:
+  - 192.168.0.236
+  - 100.66.51.106
+  - mypi
+
+pathDefaults:
+  source: publisher
+
+paths:
+  # Allow any path name (e.g. cam) to be created by ffmpeg publish
+  all_others:
+  cam:
+    source: publisher
