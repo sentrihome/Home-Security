@@ -33,8 +33,23 @@ echo "Copying pi_hub package..."
 rm -rf "$PI_HOME/pi_hub"
 cp -a "$SCRIPT_DIR/pi_hub" "$PI_HOME/pi_hub"
 chown -R koushik:koushik "$PI_HOME/pi_hub"
-mkdir -p "$PI_HOME/homesecurity/hls" "$PI_HOME/homesecurity/clips"
+mkdir -p "$PI_HOME/homesecurity/hls" "$PI_HOME/homesecurity/clips" "$PI_HOME/homesecurity/logs"
 chown -R koushik:koushik "$PI_HOME/homesecurity"
+
+echo "Installing MediaMTX config + unit (shared camera fan-out)..."
+mkdir -p /etc/mediamtx
+if [ -f "$SCRIPT_DIR/mediamtx/mediamtx.yml" ]; then
+    cp "$SCRIPT_DIR/mediamtx/mediamtx.yml" /etc/mediamtx/mediamtx.yml
+fi
+if [ -f "$SCRIPT_DIR/systemd/mediamtx.service" ]; then
+    cp "$SCRIPT_DIR/systemd/mediamtx.service" /etc/systemd/system/
+fi
+if [ -x /usr/local/bin/mediamtx ]; then
+    systemctl enable mediamtx.service 2>/dev/null || true
+    systemctl restart mediamtx.service 2>/dev/null || systemctl start mediamtx.service 2>/dev/null || true
+else
+    echo "NOTE: /usr/local/bin/mediamtx not found — install MediaMTX (see docs/WEBRTC-LAB.md) then: systemctl enable --now mediamtx"
+fi
 
 echo "Installing systemd units..."
 cp "$SCRIPT_DIR/systemd/pi-setup.service" /etc/systemd/system/

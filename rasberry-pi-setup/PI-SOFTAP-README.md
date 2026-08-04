@@ -50,15 +50,17 @@ SoftAP and hub never share `:4000` at the same time. Boot script:
 1. SoftAP / unconfigured → `pi-setup-api.py` only  
 2. Home Wi‑Fi OK → touch `.hub-ready` → `systemctl start pi-hub`
 
+Shared camera: **one** ffmpeg publisher → MediaMTX; live uses WebRTC, clips record from the same RTSP path (see [docs/WEBRTC-LAB.md](docs/WEBRTC-LAB.md)).
+
 | Method | Path | Module |
 |--------|------|--------|
-| GET | `/health` | hub (`mode: hub`) |
-| POST | `/start` `/stop` | `pi_hub.live` |
-| POST | `/motion` | `pi_hub.clips` → `pi_hub.drive` |
+| GET | `/health` | hub (`mode: hub`, `publishing`, `webrtc`) |
+| POST | `/start` `/stop` | `pi_hub.live` (WebRTC session; publisher stays) |
+| POST | `/motion` | `pi_hub.clips` (RTSP record) → `pi_hub.drive` |
 | POST | `/auth/drive` | `pi_hub.drive` |
-| GET | `/hls/<file>` | HLS playlist/segments |
+| GET | `/clips/cache` | local clip list (debug) |
 
-Package: `pi_hub/` · unit: `systemd/pi-hub.service`
+Package: `pi_hub/` · units: `systemd/pi-hub.service`, `systemd/mediamtx.service`
 
 ## API Endpoints
 

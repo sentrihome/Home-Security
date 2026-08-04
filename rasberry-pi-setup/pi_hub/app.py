@@ -1,25 +1,24 @@
 """
 Pi hub HTTP API — one Flask process on :4000 after home Wi‑Fi is up.
 
-Endpoints (local-first; matches mobile piApi stubs + architecture §15–§18):
+Endpoints:
   GET  /health
-  POST /start          → live HLS
-  POST /stop
-  POST /motion         → cache clip → Drive upload
-  POST /auth/drive     → store refresh token from app
-  GET  /hls/<file>     → serve HLS playlist/segments
-  GET  /clips/cache    → list local cache (debug)
+  POST /start          → live WebRTC session (shared MediaMTX feed)
+  POST /stop           → end live session (publisher stays for clips)
+  POST /motion         → record clip from same RTSP feed → Drive upload
+  POST /auth/drive
+  GET  /hls/<file>     → legacy HLS dir (optional)
+  GET  /clips/cache
 """
 
 from __future__ import annotations
 
 import logging
 import sys
-from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from . import clips, config, drive, live
+from . import camera, clips, config, drive, live
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,6 +31,7 @@ app = Flask(__name__)
 
 @app.route("/health", methods=["GET"])
 def health():
+    pub = camera.status()
     return jsonify(
         {
             "status": "ok",
@@ -39,6 +39,9 @@ def health():
             "device": "raspberry-pi-home-security",
             "static_ip": config.STATIC_IP,
             "streaming": live.is_streaming(),
+            "publishing": pub["publishing"],
+            "publisher": pub,
+            "webrtc": config.webrtc_urls(),
             "drive_token": drive.has_token(),
         }
     )
@@ -50,7 +53,8 @@ def start_live():
     type_ = body.get("type", "manual")
     value = body.get("value", "")
     result = live.start(type_=type_, value=value)
-    return jsonify(result)
+    status = 200 if result.get("ok") else 503
+    return jsonify(result), status
 
 
 @app.route("/stop", methods=["POST"])
@@ -60,10 +64,12 @@ def stop_live():
 
 @app.route("/motion", methods=["POST"])
 def motion():
-    """Record a clip to local cache, then attempt Drive upload."""
-    path = clips.record_clip()
+    """Record a clip from the shared RTSP feed, then attempt Drive upload."""
+    body = request.get_json(silent=True) or {}
+    duration = body.get("duration")
+    path = clips.record_clip(duration_sec=duration)
     if path is None:
-        return jsonify({"ok": False, "error": "record failed"}), 500
+        return jsonify({"ok": False, "error": "record failed — is MediaMTX + publisher up?"}), 500
 
     upload = drive.upload_clip(path)
     return jsonify(
@@ -71,6 +77,7 @@ def motion():
             "ok": True,
             "clip": path.name,
             "path": str(path),
+            "size": path.stat().st_size,
             "upload": upload,
         }
     )
@@ -103,9 +110,20 @@ def main() -> None:
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     config.HLS_DIR.mkdir(parents=True, exist_ok=True)
     config.CLIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    config.LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    log.info("Pi hub starting on %s:%s (live + clips + Drive)", config.HOST, config.PORT)
+    log.info("Pi hub starting on %s:%s (shared MediaMTX feed)", config.HOST, config.PORT)
     log.info("Data dir: %s", config.DATA_DIR)
+
+    pub = camera.ensure_publisher()
+    if pub.get("ok"):
+        log.info("Camera publisher up pid=%s", pub.get("pid"))
+    else:
+        log.warning(
+            "Camera publisher not started: %s — live/clips need MediaMTX + camera",
+            pub.get("error"),
+        )
+
     app.run(host=config.HOST, port=config.PORT, debug=False)
 
 
