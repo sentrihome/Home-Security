@@ -5,27 +5,24 @@
 #include "driver/uart.h"
 #include "string.h"
 #include <string>
+#include "httpendpoints.h"
 
+enum class cmd_s : int
+{
+    MOBILE_PAIRING
+};
 
 struct uart_s
 {
-    public:
+public:
     void init();
+    std::string receive();
+    void send(std::string transmission, cmd_s cmd);
+
+private:
+    std::string sync0 = "c";
+    std::string sync1 = "8";
 };
 
-struct pair_s
-{
-    public:
-        std::string receive();
-        void send(std::string transmission);
-
-    private:
-        std::string sync0 = "c";
-        std::string sync1 = "8";
-
-        int cmd = 1;
-};
-
-extern pair_s pair;
 extern uart_s uart;
 #endif // APP_UART_H

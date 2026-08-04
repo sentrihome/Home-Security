@@ -4,7 +4,6 @@
 
 Display display;
 
-
 // void setup(){
 //   Serial.begin(115200);
 //   display.init();
@@ -17,14 +16,16 @@ Display display;
 //   delay(200);
 // }
 
-extern "C" void app_main(void) {
+extern "C" void app_main(void)
+{
   initArduino();
   Serial.begin(115200);
   delay(10);
   wifi_init();
   uart.init();
-  
-  while(true){
+
+  while (true)
+  {
     display.init();
     display.process();
     pair.receive();

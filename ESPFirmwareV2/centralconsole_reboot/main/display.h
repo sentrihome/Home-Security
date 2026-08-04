@@ -4,13 +4,15 @@
 
 extern bool app_wifi_station_start;
 
-class Display {
+class Display
+{
 public:
     void init();
     void process();
 
 private:
-    enum Page {
+    enum Page
+    {
         UNARMED,
         ARMED,
         SETTINGS
@@ -20,7 +22,8 @@ private:
     void armed();
 };
 
-class Touch {
+class Touch
+{
 public:
     void read();
     void debug();
