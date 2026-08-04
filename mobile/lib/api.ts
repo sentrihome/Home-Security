@@ -61,7 +61,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return (await response.text()) as T;
 }
 
-/** Cloud backend (port 3001) */
+/** Cloud backend (port 3001) — legacy; clips path uses Drive directly. */
 export const cloudApi = {
   status: (baseUrl?: string) =>
     request<{ ok?: boolean; status?: string }>('/status', { baseUrl }),
@@ -107,7 +107,7 @@ export const cloudApi = {
     return url.toString();
   },
 
-  /** Opens Google OAuth in the system browser; complete via deep link / redirect. */
+  /** Legacy cloud OAuth URL — prefer in-app Google AuthSession. */
   googleAuthUrl: (baseUrl?: string) =>
     `${baseUrl ?? config.cloudBaseUrl}/auth/google`,
 };
@@ -135,4 +135,16 @@ export const piApi = {
       method: 'POST',
       baseUrl: baseUrl ?? getPiBaseUrl(),
     }),
+
+  /** Hand off Google refresh token to Pi (LAN / Tailscale only). */
+  authDrive: (
+    body: { email: string; refresh_token: string },
+    baseUrl?: string
+  ) =>
+    request<{ ok?: boolean; email?: string; error?: string }>('/auth/drive', {
+      method: 'POST',
+      body,
+      baseUrl: baseUrl ?? getPiBaseUrl(),
+    }),
 };
+

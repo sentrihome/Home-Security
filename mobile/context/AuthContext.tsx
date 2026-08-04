@@ -8,7 +8,6 @@ import {
   type ReactNode,
 } from 'react';
 
-import { cloudApi } from '@/lib/api';
 import { config } from '@/lib/config';
 import {
   clearSession,
@@ -25,7 +24,7 @@ type AuthContextValue = {
   isLoading: boolean;
   isLoggedIn: boolean;
   setCloudBaseUrl: (url: string) => Promise<void>;
-  /** Persist a session after OAuth / manual token flow. */
+  /** Persist a session after Google OAuth. */
   signIn: (session: AuthSession) => Promise<void>;
   signOut: () => Promise<void>;
   refreshMe: () => Promise<void>;
@@ -77,21 +76,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshMe = useCallback(async () => {
-    if (!session?.token) return;
-    const me = await cloudApi.me(session.token, cloudBaseUrl);
-    if (me.email) {
-      const next = { token: session.token, email: me.email };
-      setSession(next);
-      await saveSession(next);
-    }
-  }, [session, cloudBaseUrl]);
+    // Optional later: refresh Google access token / userinfo.
+    // Email + refreshToken are set at Google sign-in.
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
       cloudBaseUrl,
       isLoading,
-      isLoggedIn: Boolean(session?.token),
+      isLoggedIn: Boolean(session?.token && session?.refreshToken),
       setCloudBaseUrl,
       signIn,
       signOut,
