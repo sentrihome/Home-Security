@@ -19,6 +19,22 @@ export type StreamStatus = {
   [key: string]: unknown;
 };
 
+export type WebrtcUrls = {
+  lan?: string;
+  tailscale_ip?: string;
+  tailscale_host?: string;
+};
+
+/** Response from Pi `POST /start` (MediaMTX WebRTC live session). */
+export type LiveStartResponse = {
+  ok?: boolean;
+  streaming?: boolean;
+  error?: string;
+  webrtc_url?: string;
+  webrtc?: WebrtcUrls;
+  [key: string]: unknown;
+};
+
 export type DeviceLinkRequest = {
   deviceId: string;
 };

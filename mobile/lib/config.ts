@@ -1,12 +1,13 @@
 /**
  * Backend URLs for the Home Security stack.
  *
- * Cloud backend (port 3001): events, clips, auth, HLS playlist
- * Pi backend (port 4000): start/stop stream, motion trigger
+ * Cloud backend (port 3001): events, clips, auth
+ * Pi backend (port 4000): start/stop live, motion, health
+ * Live video: MediaMTX WebRTC on port 8889 (`/cam`), same host as Pi API
  *
  * Android emulator → host machine: use 10.0.2.2 instead of localhost
  * iOS simulator → host machine: localhost works
- * Physical device: use your LAN IP or ngrok URL
+ * Physical device: LAN IP or Tailscale host/IP
  */
 import { Platform } from 'react-native';
 

@@ -1,5 +1,5 @@
 import { config, getPiBaseUrl } from '@/lib/config';
-import type { EventClip, StreamStatus } from '@/types';
+import type { EventClip, LiveStartResponse, StreamStatus } from '@/types';
 
 export class ApiError extends Error {
   status: number;
@@ -118,7 +118,7 @@ export const piApi = {
     request('/health', { baseUrl: baseUrl ?? getPiBaseUrl() }),
 
   start: (type: string, value = '', baseUrl?: string) =>
-    request('/start', {
+    request<LiveStartResponse>('/start', {
       method: 'POST',
       body: { type, value },
       baseUrl: baseUrl ?? getPiBaseUrl(),

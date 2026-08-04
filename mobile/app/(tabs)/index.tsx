@@ -1,89 +1,127 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import { Link } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 
 import { Text, View } from '@/components/Themed';
+import { LivePlayer } from '@/components/ui/LivePlayer';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
-import { useAuth } from '@/context/AuthContext';
 import { useSetupWizard } from '@/context/SetupWizardContext';
-import { cloudApi, piApi } from '@/lib/api';
+import { piApi } from '@/lib/api';
+import { resolveWebrtcPlayUrl } from '@/lib/webrtc';
 
 export default function LiveScreen() {
-  const { isLoggedIn, session, cloudBaseUrl } = useAuth();
   const { piBaseUrl } = useSetupWizard();
-  const [status, setStatus] = useState('Idle');
+  const [playUrl, setPlayUrl] = useState<string | null>(null);
+  const [status, setStatus] = useState('Open this tab on home Wi‑Fi or Tailscale to watch.');
   const [busy, setBusy] = useState(false);
+  const [streaming, setStreaming] = useState(false);
 
-  async function run(label: string, action: () => Promise<unknown>) {
+  const startLive = useCallback(async () => {
     setBusy(true);
-    setStatus(`${label}…`);
+    setStatus('Starting live session…');
     try {
-      await action();
-      setStatus(`${label} — OK`);
+      const result = await piApi.start('app', '', piBaseUrl);
+      if (result?.ok === false) {
+        throw new Error(result.error || 'Publisher failed');
+      }
+      const url = resolveWebrtcPlayUrl(piBaseUrl, result);
+      setPlayUrl(url);
+      setStreaming(true);
+      setStatus(`Live — ${url}`);
     } catch (error) {
-      setStatus(`${label} failed: ${error instanceof Error ? error.message : String(error)}`);
+      setPlayUrl(null);
+      setStreaming(false);
+      setStatus(
+        `Start failed: ${error instanceof Error ? error.message : String(error)}. ` +
+          'Check Pi URL in Setup/Settings and that MediaMTX is running.'
+      );
     } finally {
       setBusy(false);
     }
-  }
+  }, [piBaseUrl]);
+
+  const stopLive = useCallback(async () => {
+    setBusy(true);
+    try {
+      await piApi.stop(piBaseUrl);
+      setStatus('Stopped');
+    } catch (error) {
+      setStatus(`Stop failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setPlayUrl(null);
+      setStreaming(false);
+      setBusy(false);
+    }
+  }, [piBaseUrl]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void startLive();
+
+      return () => {
+        setPlayUrl(null);
+        setStreaming(false);
+        void piApi.stop(piBaseUrl).catch(() => {
+          /* ignore — tab left */
+        });
+      };
+    }, [piBaseUrl, startLive])
+  );
 
   return (
     <Screen
       title="Live stream"
-      subtitle="Control the Pi stream and check cloud HLS status.">
-      {!isLoggedIn ? (
-        <View style={styles.card}>
-          <Text style={styles.cardText}>
-            Sign in to load private stream status and clip-backed URLs.
-          </Text>
-          <Link href="/login" asChild>
-            <PrimaryButton label="Sign in" />
-          </Link>
-        </View>
+      subtitle="Pi WebRTC over LAN or Tailscale (MediaMTX :8889)."
+      scroll={false}
+      style={styles.screen}>
+      <Text style={styles.meta}>{piBaseUrl}</Text>
+
+      {playUrl && streaming ? (
+        <LivePlayer
+          url={playUrl}
+          onError={(message) => setStatus(`Player: ${message}`)}
+        />
       ) : (
-        <Text style={styles.meta}>Signed in as {session?.email}</Text>
+        <View style={styles.placeholder}>
+          <Text style={styles.placeholderText}>
+            {busy ? 'Connecting…' : 'Stream not active'}
+          </Text>
+        </View>
       )}
 
-      <View style={styles.card}>
-        <Text style={styles.section}>Pi backend</Text>
-        <Text style={styles.meta}>{piBaseUrl}</Text>
+      <View style={styles.actions}>
         <PrimaryButton
-          label="Start webcam stream"
+          label={streaming ? 'Refresh stream' : 'Start stream'}
           loading={busy}
-          onPress={() => run('Start stream', () => piApi.start('webcam'))}
+          onPress={() => void startLive()}
         />
         <PrimaryButton
           label="Stop stream"
           variant="secondary"
           loading={busy}
-          onPress={() => run('Stop stream', () => piApi.stop())}
+          disabled={!streaming}
+          onPress={() => void stopLive()}
         />
         <PrimaryButton
-          label="Trigger motion"
+          label="Trigger motion clip"
           variant="secondary"
           loading={busy}
-          onPress={() => run('Motion', () => piApi.motion())}
+          onPress={async () => {
+            setBusy(true);
+            setStatus('Motion…');
+            try {
+              await piApi.motion(piBaseUrl);
+              setStatus('Motion — clip requested');
+            } catch (error) {
+              setStatus(
+                `Motion failed: ${error instanceof Error ? error.message : String(error)}`
+              );
+            } finally {
+              setBusy(false);
+            }
+          }}
         />
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.section}>Cloud backend</Text>
-        <Text style={styles.meta}>{cloudBaseUrl}</Text>
-        <PrimaryButton
-          label="Check /status"
-          variant="secondary"
-          loading={busy}
-          onPress={() =>
-            run('Cloud status', async () => {
-              const result = await cloudApi.status(cloudBaseUrl);
-              setStatus(`Cloud status — ${JSON.stringify(result)}`);
-            })
-          }
-        />
-        <Text style={styles.hint}>
-          HLS player wiring belongs here next: use cloudApi.playlistUrl(deviceId, token).
-        </Text>
       </View>
 
       <Text style={styles.status}>{status}</Text>
@@ -92,29 +130,29 @@ export default function LiveScreen() {
 }
 
 const styles = StyleSheet.create({
-  card: {
-    gap: 10,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#d1d5db',
-  },
-  cardText: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  section: {
-    fontSize: 17,
-    fontWeight: '600',
+  screen: {
+    gap: 12,
   },
   meta: {
     fontSize: 13,
     opacity: 0.65,
   },
-  hint: {
-    fontSize: 13,
-    opacity: 0.55,
-    lineHeight: 18,
+  placeholder: {
+    flex: 1,
+    minHeight: 240,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0f172a',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#d1d5db',
+  },
+  placeholderText: {
+    color: '#e2e8f0',
+    fontSize: 15,
+  },
+  actions: {
+    gap: 10,
   },
   status: {
     fontSize: 13,
