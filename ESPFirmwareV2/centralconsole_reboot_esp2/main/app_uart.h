@@ -16,8 +16,14 @@ struct uart_s
 struct pair_s
 {
     public:
-    std::string receive();
-    void send(char* transmission);
+        std::string receive();
+        void send(std::string transmission);
+
+    private:
+        std::string sync0 = "c";
+        std::string sync1 = "8";
+
+        int cmd = 1;
 };
 
 extern pair_s pair;
