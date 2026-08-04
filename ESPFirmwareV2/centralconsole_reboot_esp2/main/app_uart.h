@@ -7,20 +7,21 @@
 #include <string>
 #include "httpendpoints.h"
 
-enum class cmd_s: int {
+enum class cmd_s : int
+{
     MOBILE_PAIRING
 };
 
 struct uart_s
 {
-    public:
-        void init();
-        std::string receive();
-        void send(std::string transmission, cmd_s cmd);
-    private:
-        std::string sync0 = "c";
-        std::string sync1 = "8";
-    
+public:
+    void init();
+    std::string receive();
+    void send(std::string transmission, cmd_s cmd);
+
+private:
+    std::string sync0 = "c";
+    std::string sync1 = "8";
 };
 
 extern uart_s uart;

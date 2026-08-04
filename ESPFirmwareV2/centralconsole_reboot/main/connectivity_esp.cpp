@@ -4,15 +4,15 @@
 #include "esp_log.h"
 #include "display.h"
 
+static const char *TAG = "Wifi";
 
-static const char* TAG = "Wifi";
-
-static void wifi_event_handler(void *event_handler_arg, 
-                               esp_event_base_t event_base, 
-                               int32_t event_id, 
+static void wifi_event_handler(void *event_handler_arg,
+                               esp_event_base_t event_base,
+                               int32_t event_id,
                                void *event_data)
 {
-    if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_START)){
+    if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_START))
+    {
         ESP_LOGI(TAG, "Station Started");
         esp_wifi_connect();
         app_wifi_station_start = true;
@@ -21,27 +21,30 @@ static void wifi_event_handler(void *event_handler_arg,
     //     ESP_LOGI(TAG, "Accesspoint Started");
     //     app_wifi_ap_start = true;
     // }
-    if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_STOP)){
+    if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_STOP))
+    {
         ESP_LOGI(TAG, "Station Stopped");
     }
-    if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_CONNECTED)){
+    if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_CONNECTED))
+    {
         ESP_LOGI(TAG, "Connected");
     }
-    if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_DISCONNECTED)){
+    if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_DISCONNECTED))
+    {
         ESP_LOGI(TAG, "Disconnected, Retrying");
         esp_wifi_connect();
     }
-    if ((event_base == IP_EVENT) && (event_id == IP_EVENT_STA_GOT_IP)){
+    if ((event_base == IP_EVENT) && (event_id == IP_EVENT_STA_GOT_IP))
+    {
         ESP_LOGI(TAG, "Got IP ");
     }
 }
 
-
-
-void wifi_init(){
+void wifi_init()
+{
     esp_netif_init();
     esp_event_loop_create_default();
-    
+
     esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL);
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL);
 

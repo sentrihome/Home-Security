@@ -9,14 +9,16 @@ Touch touch;
 
 bool app_wifi_station_start = false;
 
-static bool startup_phase_1 = false;    //Display
-static bool startup_phase_2 = false;    //Wifi
+static bool startup_phase_1 = false; // Display
+static bool startup_phase_2 = false; // Wifi
 
 static bool display_wifi_station_start = false;
 static bool init_done = false;
 
-void Display::init() {
-    if (!startup_phase_1) {
+void Display::init()
+{
+    if (!startup_phase_1)
+    {
         tft.init();
         log("Display Initialized");
         log("Setting Background to black");
@@ -28,8 +30,10 @@ void Display::init() {
         tft.print("Display setup, rotation landscape");
         startup_phase_1 = true;
     }
-    if (!startup_phase_2) {
-        if (app_wifi_station_start) {
+    if (!startup_phase_2)
+    {
+        if (app_wifi_station_start)
+        {
             tft.setCursor(0, 10);
             tft.setTextSize(1);
             tft.print("Wifi station mode started");
@@ -38,58 +42,67 @@ void Display::init() {
             init_done = true;
         }
     }
-    if (init_done) {
+    if (init_done)
+    {
         tft.setSwapBytes(true);
         state = UNARMED;
-        tft.pushImage(0, 0, 480, 320, (const uint16_t *) uiidle);
+        tft.pushImage(0, 0, 480, 320, (const uint16_t *)uiidle);
         init_done = false;
     }
 }
 
-void Display::unarmed(){
+void Display::unarmed()
+{
     log("State unarmed, sending ui");
-    tft.pushImage(17, 8, 113, 16, (const uint16_t *) uisysdisarmed);
-    tft.pushImage(30, 124, 36, 36, (const uint16_t *) uisysdisarmed2);
-    tft.pushImage(402, 129, 48, 28, (const uint16_t *) uisysdisarmed3);
+    tft.pushImage(17, 8, 113, 16, (const uint16_t *)uisysdisarmed);
+    tft.pushImage(30, 124, 36, 36, (const uint16_t *)uisysdisarmed2);
+    tft.pushImage(402, 129, 48, 28, (const uint16_t *)uisysdisarmed3);
     state = UNARMED;
     log("Screening uiunarmed, state unarmed");
 }
 
-void Display::armed(){
+void Display::armed()
+{
     log("State armed, sending ui");
-    tft.pushImage(17, 8, 113, 16, (const uint16_t *) uisysarmed);
-    tft.pushImage(30, 124, 36, 36, (const uint16_t *) uisysarmed2);
-    tft.pushImage(402, 129, 48, 28, (const uint16_t *) uisysarmed3);
+    tft.pushImage(17, 8, 113, 16, (const uint16_t *)uisysarmed);
+    tft.pushImage(30, 124, 36, 36, (const uint16_t *)uisysarmed2);
+    tft.pushImage(402, 129, 48, 28, (const uint16_t *)uisysarmed3);
     state = ARMED;
     log("Screening uiarmed, state armed");
 }
 
-void Touch::read(){
+void Touch::read()
+{
     tft.getTouchRaw(&x, &y);
 }
 
-void Touch::debug(){
+void Touch::debug()
+{
     Serial.printf("x: %i     ", x);
     Serial.printf("y: %i     ", y);
     Serial.printf("z: %i \n", tft.getTouchRawZ());
     delay(250);
 }
 
-void Display::process(){ 
+void Display::process()
+{
     touch.read();
-    if ((touch.x >= 1982) && (touch.x <= 2432) && (touch.y >= 350) && (touch.y <= 803)){
-        if (state == UNARMED){
+    if ((touch.x >= 1982) && (touch.x <= 2432) && (touch.y >= 350) && (touch.y <= 803))
+    {
+        if (state == UNARMED)
+        {
             armed();
             delay(80);
         }
-        else if (state == ARMED){
+        else if (state == ARMED)
+        {
             unarmed();
             delay(80);
-        }        
+        }
     }
 }
 
-// x: 2432     y: 803     z: 2254 
-// x: 2432     y: 368     z: 2295 
-// x: 1982     y: 350     z: 2231 
-// x: 1984     y: 800     z: 2351 
+// x: 2432     y: 803     z: 2254
+// x: 2432     y: 368     z: 2295
+// x: 1982     y: 350     z: 2231
+// x: 1984     y: 800     z: 2351

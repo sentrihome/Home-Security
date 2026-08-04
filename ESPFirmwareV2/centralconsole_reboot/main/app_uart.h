@@ -6,24 +6,26 @@
 #include "string.h"
 #include <string>
 
+enum class cmd_s : int
+{
+    MOBILE_PAIRING,
+};
 
 struct uart_s
 {
-    public:
+public:
     void init();
 };
 
 struct pair_s
 {
-    public:
-        std::string receive();
-        void send(std::string transmission);
+public:
+    std::string receive();
+    void send(std::string transmission, cmd_s cmd);
 
-    private:
-        std::string sync0 = "c";
-        std::string sync1 = "8";
-
-        int cmd = 1;
+private:
+    std::string sync0 = "c";
+    std::string sync1 = "8";
 };
 
 extern pair_s pair;

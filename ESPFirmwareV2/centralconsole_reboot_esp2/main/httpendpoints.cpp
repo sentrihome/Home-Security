@@ -2,30 +2,34 @@
 
 QueueHandle_t waitfors3;
 
-esp_err_t api_health_resp(httpd_req_t *r) {
+esp_err_t api_health_resp(httpd_req_t *r)
+{
     return httpd_resp_sendstr(r, "{ \"health\": \"ok\" }");
 }
 
-esp_err_t api_pair_resp(httpd_req_t *r) {
+esp_err_t api_pair_resp(httpd_req_t *r)
+{
     char buf[1000];
     int length = httpd_req_recv(r, buf, sizeof(buf) - 1);
-    if (length <= 0) {
-        if (length == HTTPD_SOCK_ERR_TIMEOUT) {
+    if (length <= 0)
+    {
+        if (length == HTTPD_SOCK_ERR_TIMEOUT)
+        {
             httpd_resp_send_408(r);
         }
         return ESP_FAIL;
     }
     buf[length] = '\0';
-    
+
     std::string home_ssid = jsonparser(buf, "homessid");
     printf("Home SSID: %s\n", home_ssid.c_str());
-    
+
     std::string home_pass = jsonparser(buf, "homepass");
     printf("Home Pass: %s\n", home_pass.c_str());
-    
+
     std::string permanent_pass = jsonparser(buf, "permpass");
     printf("Permanent Pass: %s\n", permanent_pass.c_str());
-    
+
     std::string encrypted_pass = jsonparser(buf, "encryptedpass");
     printf("Encrypted Pass: %s\n", encrypted_pass.c_str());
 
@@ -43,7 +47,6 @@ esp_err_t api_pair_resp(httpd_req_t *r) {
 
     int timeout = 0;
 
-    
     printf("Awaiting S3 Confirmation\n");
 
     std::string response_full;
@@ -68,19 +71,20 @@ esp_err_t api_pair_resp(httpd_req_t *r) {
         printf("Received bad data from S3\n");
         return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"corrupted\" }");
     }
-    
+
     // return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"ok\" }");
 }
 
-void endpoint_init() {
-    waitfors3 = xQueueCreate(1, sizeof(std::string*));
-    //httpd_start(httpd_handle_t *handle, const httpd_config_t *config);
+void endpoint_init()
+{
+    waitfors3 = xQueueCreate(1, sizeof(std::string *));
+    // httpd_start(httpd_handle_t *handle, const httpd_config_t *config);
     httpd_handle_t api;
     httpd_config_t api_config = HTTPD_DEFAULT_CONFIG();
-    api_config.stack_size = 8192; 
+    api_config.stack_size = 8192;
     httpd_start(&api, &api_config);
 
-    //httpd_register_uri_handler(httpd_handle_t handle, const httpd_uri_t *uri_handler);
+    // httpd_register_uri_handler(httpd_handle_t handle, const httpd_uri_t *uri_handler);
     httpd_uri_t api_health_addr = {};
     api_health_addr.uri = "/health";
     api_health_addr.method = HTTP_GET;
