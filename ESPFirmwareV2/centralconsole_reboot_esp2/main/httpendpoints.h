@@ -6,3 +6,5 @@
 #include "app_uart.h"
 
 extern void endpoint_init();
+
+extern QueueHandle_t waitfors3;

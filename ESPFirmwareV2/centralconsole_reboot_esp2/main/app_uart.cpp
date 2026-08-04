@@ -11,7 +11,6 @@
 // The function allocates the required internal resources for the UART driver.
 
 uart_s uart;
-pair_s pair;
 
 void uart_s::init() {
     //uart_driver_install(uart_port_t uart_num, int rx_buffer_size, int tx_buffer_size, int queue_size, QueueHandle_t *uart_queue, int intr_alloc_flags);
@@ -40,7 +39,7 @@ void uart_s::init() {
 */
 
 
-std::string pair_s::receive(){
+std::string uart_s::receive(){
     char pair_receive[200];
     int length = uart_read_bytes(UART_NUM_1, pair_receive, sizeof(pair_receive) - 1, 100);
     if (length <= 0 ){
@@ -131,19 +130,29 @@ std::string pair_s::receive(){
     printf("  CRC OK\n");
 
 
-    std::string payload(payload_rec, payload_len);  // explicit length, safe with binary data
+    std::string payload(payload_rec, payload_len);  
     printf("Payload: %s\n", payload.c_str());
+    switch (static_cast<cmd_s>(cmd_byte))
+    {
+        case cmd_s::MOBILE_PAIRING: {
+            std::string *p = new std::string(payload);
+            xQueueSend(waitfors3, &p, 0);
+            break;
+    }
+        default:
+            break;
+    }
     return payload;
 }
 
-void pair_s::send(std::string transmission){
+void uart_s::send(std::string transmission, cmd_s cmd){
 
     int length_val = transmission.length();
     //extract first and last byte
     int length_firstbyte = (length_val>>8) & 0xFF;
     int length_lastbyte = length_val & 0xFF;
 
-    int crc_calc = cmd + 2*length_val;
+    int crc_calc = static_cast<int>(cmd) + 2*length_val;
     int crc_firstbyte = (crc_calc>>8) & 0xFF;
     int crc_lastbyte = crc_calc & 0xFF;
 
@@ -163,5 +172,4 @@ void pair_s::send(std::string transmission){
     printf("\n");
     uart_write_bytes(UART_NUM_1, full_frame.c_str(), full_frame.length());
     printf("Transmitted: %s\n", transmission.c_str());
-    vTaskDelay(100);
 }

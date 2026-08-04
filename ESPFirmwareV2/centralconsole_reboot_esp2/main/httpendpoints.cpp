@@ -1,5 +1,7 @@
 #include "httpendpoints.h"
 
+QueueHandle_t waitfors3;
+
 esp_err_t api_health_resp(httpd_req_t *r) {
     return httpd_resp_sendstr(r, "{ \"health\": \"ok\" }");
 }
@@ -36,29 +38,42 @@ esp_err_t api_pair_resp(httpd_req_t *r) {
     std::string raspberrypi_ip = jsonparser(buf, "raspberrypiip");
     printf("RaspberryPi IP: %s\n", raspberrypi_ip.c_str());
 
-    pair.send(buf);
+    uart.send(buf, cmd_s::MOBILE_PAIRING);
     printf("Relayed the data through UART");
 
     int timeout = 0;
-    while (timeout <= 30)
-    {
-        printf("Awaiting S3 Confirmation\n");
-        std::string response_full = pair.receive();
-        std::string response_partsed = jsonparser(response_full.c_str(), "pairing payload");
-        if (response_partsed == "received")
-        {
-            printf("Received Confirmation from S3\n");
-            return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"ok\" }");
-        }
-        timeout++;
-        if (timeout == 30)
-            return httpd_resp_send_408(r);
-    }
 
-    return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"ok\" }");
+    
+    printf("Awaiting S3 Confirmation\n");
+
+    std::string response_full;
+    std::string *response_full_ptr = nullptr;
+    if (xQueueReceive(waitfors3, &response_full_ptr, pdMS_TO_TICKS(5000)))
+    {
+        response_full = *response_full_ptr;
+        delete response_full_ptr;
+    }
+    else
+    {
+        return httpd_resp_send_408(r);
+    }
+    std::string response_partsed = jsonparser(response_full.c_str(), "pairing payload");
+    if (response_partsed == "received")
+    {
+        printf("Received Confirmation from S3\n");
+        return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"ok\" }");
+    }
+    else
+    {
+        printf("Received bad data from S3\n");
+        return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"corrupted\" }");
+    }
+    
+    // return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"ok\" }");
 }
 
 void endpoint_init() {
+    waitfors3 = xQueueCreate(1, sizeof(std::string*));
     //httpd_start(httpd_handle_t *handle, const httpd_config_t *config);
     httpd_handle_t api;
     httpd_config_t api_config = HTTPD_DEFAULT_CONFIG();
