@@ -26,7 +26,8 @@ Nothing in Phase 1+ should start until these are answered — they change API sh
 
 Build the part of the system that has zero external dependencies (no Pi, no app, no cloud) — just the two console-side ESP32s talking to each other and to a phone.
 
-1. [ ] Implement the UART frame format (§9): `SYNC | CMD | LEN | PAYLOAD | CRC`. Write this before any of the commands that use it — get framing, checksum validation, and buffer-split handling solid first, since a bug here silently corrupts every message type built on top of it.
+1. [x] Implement the UART frame format (§9): `SYNC | CMD | LEN | PAYLOAD | CRC`. Write this before any of the commands that use it — get framing, checksum validation, and buffer-split handling solid first, since a bug here silently corrupts every message type built on top of it.
+    - **NOTE: buffer-split handling** — `uart_read_bytes()` with a 100-tick timeout will miss frames that arrive across multiple reads. Need a ring buffer + state machine that accumulates bytes until a complete frame (sync + length + payload + CRC) is assembled.
 
 2. [ ] Implement the confirmed command set (§9): home WiFi creds, connection result, sensor event relay, status/heartbeat. Leave the two Phase-0-dependent commands (motion-relay tagging, arm/disarm-to-sensor) until Phase 0 lands.
 

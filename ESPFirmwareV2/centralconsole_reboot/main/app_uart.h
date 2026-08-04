@@ -1,6 +1,10 @@
+#pragma once
+#ifndef APP_UART_H
+#define APP_UART_H
+
 #include "driver/uart.h"
 #include "string.h"
-#include "jsonhandler.h"
+#include <string>
 
 
 struct uart_s
@@ -12,9 +16,16 @@ struct uart_s
 struct pair_s
 {
     public:
-        void send(char* transmission);
         std::string receive();
+        void send(std::string transmission);
+
+    private:
+        std::string sync0 = "c";
+        std::string sync1 = "8";
+
+        int cmd = 1;
 };
 
 extern pair_s pair;
 extern uart_s uart;
+#endif // APP_UART_H

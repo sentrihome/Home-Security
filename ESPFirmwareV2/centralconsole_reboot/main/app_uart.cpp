@@ -1,4 +1,5 @@
 #include "app_uart.h"
+#include "jsonhandler.h"
 
 // Install Drivers
 // First of all, install the driver by calling uart_driver_install() and specify the following parameters:
@@ -34,44 +35,159 @@ void uart_s::init() {
     printf("%lu\n", baudrate_print);
 }
 
-void pair_s::send(char* transmission){
-    uart_write_bytes(UART_NUM_1, transmission, strlen(transmission));
-    printf("Transmitted: %s\n", transmission);
-    vTaskDelay(1000);
-}
+ /*
+ The locked frame format is
+ SYNC(2B) | CMD(1B) | LEN(2B) | PAYLOAD | CRC(1-2B), bidirectional, plaintext
+*/
+
 
 std::string pair_s::receive(){
-    char pair_receive[1000];
+    char pair_receive[200];
     int length = uart_read_bytes(UART_NUM_1, pair_receive, sizeof(pair_receive) - 1, 100);
-    pair_receive[sizeof(pair_receive) - 1] = '\0';
     if (length <= 0 ){
         return "";
     }
+    pair_receive[length] = '\0';
 
-    std::string home_ssid = jsonparser(pair_receive, "homessid");
+    //parse sync and note position
+    bool sync_rec = false;
+    int message_pos = 0;
+    printf("  Received_UART: %d bytes raw: ", length);
+    for (int i = 0; i < length; i++) {
+        printf("%02x ", (uint8_t)pair_receive[i]);
+    }
+    printf("\n");
+    for (int i = 0; i < length - 1; i++)
+    {
+        if ((pair_receive[i] == 'c') && !sync_rec)
+        {
+            if (pair_receive[i + 1] == '8')
+            {
+                printf("  Sync found at index %d (0x%02x 0x%02x)\n", i, (uint8_t)pair_receive[i], (uint8_t)pair_receive[i + 1]);
+                message_pos = i + 1;
+                sync_rec = true;
+            }
+        }
+    }
+    if (!sync_rec)
+    {
+        printf("  No sync received\n");
+        return "";
+    }
+    printf("  Sync verified, message_pos=%d\n", message_pos);
+
+    //find the command and update the position
+    int cmd_byte = (uint8_t)pair_receive[message_pos + 1];
+    char cmd_rec = pair_receive[message_pos + 1];
+    message_pos += 1;
+    printf("  CMD: 0x%02x ('%c'), message_pos=%d\n", cmd_byte, cmd_rec, message_pos);
+
+    //find the length and update the position
+    char length_rec[2];
+    length_rec[0] = pair_receive[message_pos + 1];
+    message_pos += 1;
+    length_rec[1] = pair_receive[message_pos + 1];
+    message_pos += 1;
+    printf("  LEN bytes: 0x%02x 0x%02x\n", (uint8_t)length_rec[0], (uint8_t)length_rec[1]);
+    uint16_t payload_len = ((uint8_t)length_rec[0] << 8) | (uint8_t)length_rec[1];
+    printf("  Payload length: %u, message_pos=%d\n", payload_len, message_pos);
+
+    //extract the payload and update the position
+    if (payload_len == 0) {
+        printf("  Empty payload\n");
+    }
+    message_pos += 1;
+    char payload_rec[200];
+    for (int i = 0; i < payload_len; i++)
+    {
+        payload_rec[i] = pair_receive[message_pos];
+        printf("  payload[%d] = 0x%02x\n", i, (uint8_t)payload_rec[i]);
+        message_pos += 1;
+    }
+    printf("  message_pos after payload: %d\n", message_pos);
+
+    //parse crc and update the position
+    char crc_rec[2];
+    crc_rec[0] = pair_receive[message_pos];
+    printf("  CRC byte 0: 0x%02x\n", (uint8_t)crc_rec[0]);
+    message_pos += 1;
+    crc_rec[1] = pair_receive[message_pos];
+    printf("  CRC byte 1: 0x%02x\n", (uint8_t)crc_rec[1]);
+    message_pos += 1;
+    uint16_t crc_received = ((uint8_t)crc_rec[0] << 8) | (uint8_t)crc_rec[1];
+    printf("  CRC received: 0x%04x\n", crc_received);
+
+    //validate
+    int cmd_rec_int = cmd_rec;
+    int validation_score = cmd_rec_int + 2*payload_len;
+
+    printf("  Validation: cmd(0x%02x) + 2*len(%u) = %d, CRC=0x%04x\n", (uint8_t)cmd_rec, payload_len, validation_score, crc_received);
+
+    if (validation_score != crc_received)
+    {
+        printf("  CRC mismatch: got 0x%04x, expected 0x%04x\n", crc_received, validation_score);
+        return "";
+    }
+    printf("  CRC OK\n");
+
+
+    std::string payload(payload_rec, payload_len);  // explicit length, safe with binary data
+    printf("Payload: %s\n", payload.c_str());
+
+    // Parse JSON fields from validated payload
+    std::string home_ssid = jsonparser(payload.c_str(), "homessid");
     printf("Home SSID: %s\n", home_ssid.c_str());
-    
-    std::string home_pass = jsonparser(pair_receive, "homepass");
+
+    std::string home_pass = jsonparser(payload.c_str(), "homepass");
     printf("Home Pass: %s\n", home_pass.c_str());
-    
-    std::string permanent_pass = jsonparser(pair_receive, "permpass");
+
+    std::string permanent_pass = jsonparser(payload.c_str(), "permpass");
     printf("Permanent Pass: %s\n", permanent_pass.c_str());
-    
-    std::string encrypted_pass = jsonparser(pair_receive, "encryptedpass");
+
+    std::string encrypted_pass = jsonparser(payload.c_str(), "encryptedpass");
     printf("Encrypted Pass: %s\n", encrypted_pass.c_str());
 
-    std::string schedule_start = jsonparser(pair_receive, "schedulestart");
+    std::string schedule_start = jsonparser(payload.c_str(), "schedulestart");
     printf("Schedule Start: %s\n", schedule_start.c_str());
 
-    std::string schedule_stop = jsonparser(pair_receive, "schedulestop");
+    std::string schedule_stop = jsonparser(payload.c_str(), "schedulestop");
     printf("Schedule Stop: %s\n", schedule_stop.c_str());
 
-    std::string raspberrypi_ip = jsonparser(pair_receive, "raspberrypiip");
+    std::string raspberrypi_ip = jsonparser(payload.c_str(), "raspberrypiip");
     printf("RaspberryPi IP: %s\n", raspberrypi_ip.c_str());
 
     pair.send("{\"pairing payload\" : \"received\"}");
 
-    printf("Received_UART: %s\n", pair_receive);
-    return pair_receive;
-    
+    return payload;
+
+}
+
+void pair_s::send(std::string transmission){
+
+    int length_val = transmission.length();
+    //extract first and last byte
+    int length_firstbyte = (length_val>>8) & 0xFF;
+    int length_lastbyte = length_val & 0xFF;
+
+    int crc_calc = cmd + 2*length_val;
+    int crc_firstbyte = (crc_calc>>8) & 0xFF;
+    int crc_lastbyte = crc_calc & 0xFF;
+
+    std::string length;
+    length.push_back(static_cast<char>(length_firstbyte));
+    length.push_back(static_cast<char>(length_lastbyte));
+    std::string crc;
+    crc.push_back(static_cast<char>(crc_firstbyte));
+    crc.push_back(static_cast<char>(crc_lastbyte));
+    std::string cmd_str;
+    cmd_str.push_back(static_cast<char>(cmd));
+    std::string full_frame = sync0 + sync1 + cmd_str + length + transmission + crc;
+    printf("Full Frame (%zu bytes): ", full_frame.length());
+    for (size_t i = 0; i < full_frame.length(); i++) {
+        printf("%02x ", (uint8_t)full_frame[i]);
+    }
+    printf("\n");
+    uart_write_bytes(UART_NUM_1, full_frame.c_str(), full_frame.length());
+    printf("Transmitted: %s\n", transmission.c_str());
+    vTaskDelay(100);
 }
