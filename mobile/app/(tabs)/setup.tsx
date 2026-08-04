@@ -15,6 +15,7 @@ import { useSetupWizard, type WizardStep } from '@/context/SetupWizardContext';
 import { cloudApi, piApi } from '@/lib/api';
 import { DEFAULT_PI_HOST, PI_SOFTAP_BASE_URL } from '@/lib/config';
 import * as esp from '@/lib/esp';
+import { fetchGoogleEmail, useGoogleDriveAuth } from '@/lib/googleAuth';
 import {
   PERMANENT_PASS_ALLOWED,
   PERMANENT_PASS_LENGTH,
@@ -40,10 +41,10 @@ const STEP_LABELS = ['Pi Wi-Fi', 'ESP32', 'Done'];
 const ESP_STEP_LABELS = ['Connect', 'Wi-Fi', 'Permanent', 'Random', 'Module'];
 
 /**
- * Setup wizard: Pi SoftAP first, then ESP SoftAP pairing, plus cloud link.
+ * Setup wizard: Google Drive auth → Pi SoftAP → ESP SoftAP pairing.
  */
 export default function SetupScreen() {
-  const { isLoggedIn, session, cloudBaseUrl } = useAuth();
+  const { isLoggedIn, session, signIn, signOut, cloudBaseUrl } = useAuth();
   const {
     currentStep,
     setCurrentStep,
@@ -87,6 +88,10 @@ export default function SetupScreen() {
   const [debugStatus, setDebugStatus] = useState('');
   const [debugBusy, setDebugBusy] = useState(false);
 
+  const { response, promptAsync, ready } = useGoogleDriveAuth();
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleStatus, setGoogleStatus] = useState('');
+
   useEffect(() => {
     if (currentStep > 0) setPiSetupDone(true);
     if (currentStep >= 2) {
@@ -101,6 +106,86 @@ export default function SetupScreen() {
       if (saved) setRandomPass(saved);
     })();
   }, []);
+
+  useEffect(() => {
+    if (response?.type !== 'success') return;
+
+    const accessToken = response.authentication?.accessToken;
+    const refreshToken = response.authentication?.refreshToken;
+
+    if (!accessToken || !refreshToken) {
+      setGoogleStatus(
+        'No refresh token from Google. Revoke app access at myaccount.google.com/permissions and sign in again.'
+      );
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setGoogleBusy(true);
+      setGoogleStatus('');
+      try {
+        const email = await fetchGoogleEmail(accessToken);
+        if (cancelled) return;
+        await signIn({ token: accessToken, refreshToken, email });
+        setGoogleStatus(`Signed in as ${email}`);
+      } catch (e) {
+        if (!cancelled) {
+          setGoogleStatus(e instanceof Error ? e.message : 'Google sign-in failed');
+        }
+      } finally {
+        if (!cancelled) setGoogleBusy(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [response, signIn]);
+
+  /** Health-check Pi, POST Drive refresh token, then advance wizard. */
+  async function handoffToPi(host: string) {
+    setVerifying(true);
+    setSetupStatus(`Checking ${host}:4000…`);
+    try {
+      const baseUrl = `http://${host}:4000`;
+      await piApi.health(baseUrl);
+
+      if (!session?.email || !session.refreshToken) {
+        throw new Error('Sign in with Google first (refresh token required).');
+      }
+
+      setSetupStatus('Sending Google Drive token to Pi…');
+      const handoff = await piApi.authDrive(
+        { email: session.email, refresh_token: session.refreshToken },
+        baseUrl
+      );
+      if (
+        handoff &&
+        typeof handoff === 'object' &&
+        'ok' in handoff &&
+        (handoff as { ok?: boolean }).ok === false
+      ) {
+        throw new Error(
+          (handoff as { error?: string }).error || 'Pi rejected Drive token'
+        );
+      }
+
+      await setPiHost(host);
+      setPendingPiHost(host);
+      setPiSetupDone(true);
+      advanceFromPiSetup();
+      setSetupStatus(`Pi OK at ${host}. Drive token stored on Pi.`);
+    } catch (error) {
+      setSetupStatus(
+        error instanceof Error
+          ? `Verify/handoff failed: ${error.message}`
+          : 'Verification failed'
+      );
+    } finally {
+      setVerifying(false);
+    }
+  }
 
   async function scanNetworks() {
     setSetupMode('scanning');
@@ -169,24 +254,7 @@ export default function SetupScreen() {
   }
 
   async function verifyPiOnLan() {
-    setVerifying(true);
-    setSetupStatus(`Checking ${pendingPiHost}:4000…`);
-    try {
-      const baseUrl = `http://${pendingPiHost}:4000`;
-      await piApi.health(baseUrl);
-      await setPiHost(pendingPiHost);
-      setPiSetupDone(true);
-      advanceFromPiSetup();
-      setSetupStatus(`Pi reachable at ${pendingPiHost}.`);
-    } catch (error) {
-      setSetupStatus(
-        error instanceof Error
-          ? `Not reachable yet: ${error.message}. Make sure the phone is back on home Wi-Fi and try again.`
-          : 'Verification failed'
-      );
-    } finally {
-      setVerifying(false);
-    }
+    await handoffToPi(pendingPiHost);
   }
 
   function resetEspState() {
@@ -305,8 +373,6 @@ export default function SetupScreen() {
     setEspBusy(true);
     setEspStatus('Sending random password to ESP...');
     try {
-      // Save first — if the ESP restarts its AP mid-response and the fetch drops,
-      // we still have the password on the phone for module pairing.
       await saveEspRandomPassword(randomPass);
       await esp.sendEncryptedPass(randomPass);
       setRandomPassSent(true);
@@ -414,8 +480,36 @@ export default function SetupScreen() {
   return (
     <Screen
       title="Device setup"
-      subtitle="Connect the Pi to home Wi-Fi first, then configure the ESP32.">
+      subtitle="Sign in with Google, connect the Pi to home Wi-Fi, then configure the ESP32.">
       <StepIndicator current={currentStep} />
+
+      <StepCard
+        n={0}
+        title="Sign in with Google"
+        subtitle="Do this on home Wi-Fi or cellular — not on the Pi hotspot."
+        active={!isLoggedIn}
+        done={isLoggedIn}
+        alwaysShowBody>
+        {isLoggedIn ? (
+          <>
+            <Text style={styles.hint}>Signed in as {session?.email}</Text>
+            <PrimaryButton label="Sign out" variant="secondary" onPress={() => signOut()} />
+          </>
+        ) : (
+          <>
+            <Text style={styles.hint}>
+              Use an Android dev build (expo run:android), not Expo Go.
+            </Text>
+            <PrimaryButton
+              label="Sign in with Google"
+              loading={googleBusy}
+              disabled={!ready}
+              onPress={() => promptAsync()}
+            />
+          </>
+        )}
+        {googleStatus ? <Text style={styles.status}>{googleStatus}</Text> : null}
+      </StepCard>
 
       <StepCard
         n={1}
@@ -423,110 +517,114 @@ export default function SetupScreen() {
         subtitle="Join HomeSecurity-Setup, send credentials, then verify the Pi on your LAN."
         active={currentStep === 0}
         done={piSetupDone}>
-        {setupMode === 'instructions' && (
+        {!isLoggedIn ? (
+          <Text style={styles.hint}>Sign in with Google above first.</Text>
+        ) : (
           <>
-            <Text style={styles.hint}>
-              Join the Pi hotspot in phone settings:{'\n\n'}
-              • SSID: <Text style={styles.bold}>HomeSecurity-Setup</Text>
-              {'\n'}• Password: <Text style={styles.bold}>setup1234</Text>
-              {'\n\n'}
-              Then return here and scan.
-            </Text>
-            <PrimaryButton label="Scan networks" onPress={scanNetworks} />
-            {piSetupDone ? null : (
-              <PrimaryButton
-                label="Skip — Pi already on LAN"
-                variant="secondary"
-                onPress={async () => {
-                  await setPiHost(DEFAULT_PI_HOST);
-                  setPiSetupDone(true);
-                  advanceFromPiSetup();
-                }}
-              />
-            )}
-          </>
-        )}
-
-        {setupMode === 'scanning' && (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" />
-            <Text style={styles.hint}>Scanning…</Text>
-          </View>
-        )}
-
-        {setupMode === 'credentials' && (
-          <>
-            <Text style={styles.hint}>Select your home Wi-Fi network:</Text>
-            <RNView style={styles.networkList}>
-              {networks.map((net) => (
-                <TouchableOpacity
-                  key={net.ssid}
-                  style={[
-                    styles.networkItem,
-                    selectedNetwork === net.ssid && styles.networkItemSelected,
-                  ]}
-                  onPress={() => setSelectedNetwork(net.ssid)}>
-                  <Text style={styles.networkName}>{net.ssid}</Text>
-                  <Text style={styles.networkSignal}>
-                    {net.signal}% • {net.security}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </RNView>
-
-            {selectedNetwork ? (
+            {setupMode === 'instructions' && (
               <>
-                <Text style={styles.hint}>Password for {selectedNetwork}:</Text>
-                <TextInput
-                  value={piWifiPassword}
-                  onChangeText={setPiWifiPassword}
-                  placeholder="WiFi password"
-                  placeholderTextColor="#9ca3af"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={styles.input}
-                />
-                <PrimaryButton label="Configure Pi" onPress={submitCredentials} />
+                <Text style={styles.hint}>
+                  Join the Pi hotspot in phone settings:{'\n\n'}
+                  • SSID: <Text style={styles.bold}>HomeSecurity-Setup</Text>
+                  {'\n'}• Password: <Text style={styles.bold}>setup1234</Text>
+                  {'\n\n'}
+                  Then return here and scan.
+                </Text>
+                <PrimaryButton label="Scan networks" onPress={scanNetworks} />
+                {piSetupDone ? null : (
+                  <PrimaryButton
+                    label="Skip — Pi already on LAN"
+                    variant="secondary"
+                    disabled={!isLoggedIn}
+                    loading={verifying}
+                    onPress={() => handoffToPi(DEFAULT_PI_HOST)}
+                  />
+                )}
               </>
+            )}
+
+            {setupMode === 'scanning' && (
+              <View style={styles.center}>
+                <ActivityIndicator size="large" />
+                <Text style={styles.hint}>Scanning…</Text>
+              </View>
+            )}
+
+            {setupMode === 'credentials' && (
+              <>
+                <Text style={styles.hint}>Select your home Wi-Fi network:</Text>
+                <RNView style={styles.networkList}>
+                  {networks.map((net) => (
+                    <TouchableOpacity
+                      key={net.ssid}
+                      style={[
+                        styles.networkItem,
+                        selectedNetwork === net.ssid && styles.networkItemSelected,
+                      ]}
+                      onPress={() => setSelectedNetwork(net.ssid)}>
+                      <Text style={styles.networkName}>{net.ssid}</Text>
+                      <Text style={styles.networkSignal}>
+                        {net.signal}% • {net.security}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </RNView>
+
+                {selectedNetwork ? (
+                  <>
+                    <Text style={styles.hint}>Password for {selectedNetwork}:</Text>
+                    <TextInput
+                      value={piWifiPassword}
+                      onChangeText={setPiWifiPassword}
+                      placeholder="WiFi password"
+                      placeholderTextColor="#9ca3af"
+                      secureTextEntry
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      style={styles.input}
+                    />
+                    <PrimaryButton label="Configure Pi" onPress={submitCredentials} />
+                  </>
+                ) : null}
+              </>
+            )}
+
+            {setupMode === 'submitting' && (
+              <View style={styles.center}>
+                <ActivityIndicator size="large" />
+                <Text style={styles.hint}>Configuring…</Text>
+              </View>
+            )}
+
+            {setupMode === 'verify' && (
+              <>
+                <Text style={styles.hint}>
+                  Expected Pi IP: <Text style={styles.bold}>{pendingPiHost}</Text>
+                </Text>
+                <PrimaryButton
+                  label="Verify Pi on home network"
+                  loading={verifying}
+                  onPress={verifyPiOnLan}
+                />
+                <PrimaryButton
+                  label="Start over"
+                  variant="secondary"
+                  onPress={resetPiSetup}
+                />
+              </>
+            )}
+
+            {setupStatus ? (
+              <Text
+                style={[
+                  styles.status,
+                  setupMode === 'verify' && piSetupDone && styles.statusSuccess,
+                ]}>
+                {setupStatus}
+              </Text>
             ) : null}
           </>
         )}
-
-        {setupMode === 'submitting' && (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" />
-            <Text style={styles.hint}>Configuring…</Text>
-          </View>
-        )}
-
-        {setupMode === 'verify' && (
-          <>
-            <Text style={styles.hint}>
-              Expected Pi IP: <Text style={styles.bold}>{pendingPiHost}</Text>
-            </Text>
-            <PrimaryButton
-              label="Verify Pi on home network"
-              loading={verifying}
-              onPress={verifyPiOnLan}
-            />
-            <PrimaryButton
-              label="Start over"
-              variant="secondary"
-              onPress={resetPiSetup}
-            />
-          </>
-        )}
-
-        {setupStatus ? (
-          <Text
-            style={[
-              styles.status,
-              setupMode === 'verify' && piSetupDone && styles.statusSuccess,
-            ]}>
-            {setupStatus}
-          </Text>
-        ) : null}
       </StepCard>
 
       <StepCard
@@ -964,3 +1062,4 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
 });
+

@@ -1,73 +1,72 @@
-import { useState } from 'react';
-import { StyleSheet, TextInput } from 'react-native';
+import { useEffect, useState } from 'react';
+import { StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 
 import { Text, View } from '@/components/Themed';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { useAuth } from '@/context/AuthContext';
-import { cloudApi } from '@/lib/api';
+import { fetchGoogleEmail, useGoogleDriveAuth } from '@/lib/googleAuth';
 
 /**
- * Dev-friendly sign-in until OAuth deep links are wired.
- * Paste the Bearer token returned by the cloud backend after Google OAuth.
+ * Android Google OAuth (dev build). Grants Drive access for Pi handoff.
  */
 export default function LoginScreen() {
-  const { cloudBaseUrl, signIn } = useAuth();
-  const [email, setEmail] = useState('');
-  const [token, setToken] = useState('');
-  const [error, setError] = useState('');
+  const { signIn } = useAuth();
+  const { response, promptAsync, ready } = useGoogleDriveAuth();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
-  async function submit() {
-    if (!token.trim()) {
-      setError('Token is required.');
+  useEffect(() => {
+    if (response?.type !== 'success') return;
+
+    const accessToken = response.authentication?.accessToken;
+    const refreshToken = response.authentication?.refreshToken;
+    if (!accessToken || !refreshToken) {
+      setError(
+        'No refresh token from Google. Revoke app access at myaccount.google.com/permissions and try again.'
+      );
       return;
     }
 
-    setBusy(true);
-    setError('');
-    try {
-      let resolvedEmail = email.trim();
-      if (!resolvedEmail) {
-        const me = await cloudApi.me(token.trim(), cloudBaseUrl);
-        resolvedEmail = me.email ?? 'unknown';
+    let cancelled = false;
+    (async () => {
+      setBusy(true);
+      setError('');
+      try {
+        const email = await fetchGoogleEmail(accessToken);
+        if (cancelled) return;
+        await signIn({ token: accessToken, refreshToken, email });
+        router.back();
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Sign-in failed');
+        }
+      } finally {
+        if (!cancelled) setBusy(false);
       }
-      await signIn({ token: token.trim(), email: resolvedEmail });
-      router.back();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-in failed');
-    } finally {
-      setBusy(false);
-    }
-  }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [response, signIn]);
 
   return (
     <Screen
       title="Sign in"
-      subtitle="Use a cloud auth token (OAuth deep-link flow can replace this).">
+      subtitle="Android Google OAuth (dev build). Grants Drive access for Pi handoff.">
       <View style={styles.card}>
-        <Text style={styles.label}>Email (optional if /api/auth/me works)</Text>
-        <TextInput
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          placeholder="you@example.com"
-          style={styles.input}
-        />
-        <Text style={styles.label}>Bearer token</Text>
-        <TextInput
-          value={token}
-          onChangeText={setToken}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="paste token"
-          style={[styles.input, styles.token]}
-          multiline
-        />
+        <Text style={styles.hint}>
+          Use npx expo run:android — not Expo Go.
+        </Text>
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <PrimaryButton label="Save session" loading={busy} onPress={submit} />
+        <PrimaryButton
+          label="Sign in with Google"
+          loading={busy}
+          disabled={!ready}
+          onPress={() => promptAsync()}
+        />
       </View>
     </Screen>
   );
@@ -81,22 +80,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#d1d5db',
   },
-  label: {
+  hint: {
     fontSize: 13,
-    fontWeight: '600',
-    opacity: 0.8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 15,
-  },
-  token: {
-    minHeight: 96,
-    textAlignVertical: 'top',
+    lineHeight: 18,
+    opacity: 0.7,
   },
   error: {
     color: '#b91c1c',

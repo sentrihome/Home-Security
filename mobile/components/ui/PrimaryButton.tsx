@@ -25,14 +25,14 @@ export const PrimaryButton = forwardRef<typeof Pressable, PrimaryButtonProps>(
         ref={ref as never}
         accessibilityRole="button"
         disabled={isDisabled}
-        style={({ pressed }) => [
+        style={(state) => [
           styles.base,
           variant === 'primary' && styles.primary,
           variant === 'secondary' && styles.secondary,
           variant === 'danger' && styles.danger,
-          pressed && !isDisabled && styles.pressed,
+          state.pressed && !isDisabled && styles.pressed,
           isDisabled && styles.disabled,
-          typeof style === 'function' ? style({ pressed }) : style,
+          typeof style === 'function' ? style(state) : style,
         ]}
         {...rest}>
         {loading ? (

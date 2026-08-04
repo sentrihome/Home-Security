@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, TextInput } from 'react-native';
 import { Link, router } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 
 import { Text, View } from '@/components/Themed';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { useAuth } from '@/context/AuthContext';
 import { useSetupWizard } from '@/context/SetupWizardContext';
-import { cloudApi } from '@/lib/api';
 import { config } from '@/lib/config';
 
 export default function SettingsScreen() {
@@ -32,14 +30,6 @@ export default function SettingsScreen() {
     setMessage('Pi host saved.');
   }
 
-  async function openGoogleAuth() {
-    const authUrl = cloudApi.googleAuthUrl(cloudBaseUrl);
-    await WebBrowser.openBrowserAsync(authUrl);
-    setMessage(
-      'Complete Google sign-in in the browser, then paste the token on the Sign in screen (OAuth deep-link wiring comes next).'
-    );
-  }
-
   return (
     <Screen title="Settings" subtitle="Cloud backend and account.">
       <View style={styles.card}>
@@ -60,13 +50,8 @@ export default function SettingsScreen() {
           <>
             <Text style={styles.meta}>Not signed in</Text>
             <Link href="/login" asChild>
-              <PrimaryButton label="Sign in" />
+              <PrimaryButton label="Sign in with Google" />
             </Link>
-            <PrimaryButton
-              label="Open Google OAuth"
-              variant="secondary"
-              onPress={openGoogleAuth}
-            />
           </>
         )}
       </View>
