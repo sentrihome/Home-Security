@@ -1,4 +1,4 @@
-26772886467491677
+26774675070301100
 Audio_Module
 Reverb_BTDR-1H
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
@@ -62670,6 +62670,20 @@ heatsink
 0
 0
 0
+HomeSecurity-Proj
+esp32wroom
+
+
+0
+40
+40
+HomeSecurity-Proj
+ili9488
+
+
+0
+14
+14
 Inductor_SMD
 L_6.3x6.3_H3
 Choke, SMD, 6.3x6.3mm 3mm height
@@ -106364,10 +106378,3 @@ Varistor VF
 0
 2
 2
-customespfootprint
-esp32wroom
-
-
-0
-40
-40
