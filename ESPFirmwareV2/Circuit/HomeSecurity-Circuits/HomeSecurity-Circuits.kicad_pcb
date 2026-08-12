@@ -275,7 +275,7 @@
 		)
 		(path "/e4be6c58-7566-4d88-880a-4a8e2e072edd")
 		(sheetname "/")
-		(sheetfile "Untitled.kicad_sch")
+		(sheetfile "HomeSecurity-Circuits.kicad_sch")
 		(attr smd)
 		(pad "1" thru_hole roundrect
 			(at 15 -24.13)
@@ -761,7 +761,7 @@
 			(net 0)
 			(net_name "")
 			(layers "F.Cu" "B.Cu")
-			(uuid "adac86bb-b4b0-48be-8f41-67af65a0194a")
+			(uuid "f92fe8bd-df7f-4700-8307-660b8b13d334")
 			(hatch edge 0.5)
 			(connect_pads
 				(clearance 0)
@@ -793,7 +793,7 @@
 			(net 0)
 			(net_name "")
 			(layers "F.Cu" "B.Cu")
-			(uuid "3a1a66f4-fc00-4f29-8bab-0bd2f7ff462d")
+			(uuid "2dabe905-7412-4ddc-8d96-f7390f800c7c")
 			(hatch edge 0.5)
 			(connect_pads
 				(clearance 0)
@@ -825,7 +825,7 @@
 			(net 0)
 			(net_name "")
 			(layers "F.Cu" "B.Cu")
-			(uuid "f900e84a-b95e-467e-962c-111cacb46212")
+			(uuid "535f7849-5dd9-40d9-8815-bd4f34767f05")
 			(hatch edge 0.5)
 			(connect_pads
 				(clearance 0)
@@ -913,7 +913,7 @@
 		)
 		(path "/2c95fdea-1ae9-4288-adff-9ea030537d56")
 		(sheetname "/")
-		(sheetfile "Untitled.kicad_sch")
+		(sheetfile "HomeSecurity-Circuits.kicad_sch")
 		(attr smd)
 		(pad "1" thru_hole roundrect
 			(at 15 -24.13)
@@ -1551,7 +1551,7 @@
 		)
 		(path "/b336dea4-54cb-4727-bdc1-dc95a1b0857c")
 		(sheetname "/")
-		(sheetfile "Untitled.kicad_sch")
+		(sheetfile "HomeSecurity-Circuits.kicad_sch")
 		(attr smd)
 		(fp_rect
 			(start -54 30.75)
