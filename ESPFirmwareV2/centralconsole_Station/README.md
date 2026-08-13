@@ -147,3 +147,28 @@ The TFT_eSPI library reads pin configuration from sdkconfig (Kconfig), not from 
 | 2026-07-11 | AP disabled                          | Removed AP mode from central console, added wiring documentation |
 | 2026-07-11 | UART driver                          | Configured UART driver for sensor communication (GPIO17 TX / GPIO18 RX) |
 | 2026-07-28 | **Module separation (current)**      | Separated device modules into distinct files (`connectivity`, `app_uart`, `httpendpoints`), moved endpoints out of `main.cpp`, wired all modules into `app_main()` entry point |
+
+---
+
+## Known Issues & Notes
+
+### WiFi credential buffer in `wifi_start()`
+
+`connectivity_esp.cpp` copies SSID/password into the `wifi_config_t` struct using `memcpy` with `size() + 1` (including null terminator):
+
+| Buffer | Size | Overflow triggers at |
+|--------|------|---------------------|
+| `sta.ssid` | 32 bytes | SSID ≥ 32 bytes (33 bytes copied) |
+| `sta.password` | 64 bytes | Password ≥ 64 bytes (65 bytes copied) |
+
+**Why this is not a practical bug:**
+- IEEE 802.11 caps SSIDs at 32 bytes; WPA2 caps passphrases at 64 bytes. No valid credential can exceed these limits.
+- Even with a 32-byte SSID, the overflow null byte overwrites `password[0]`, which is immediately overwritten by the next `memcpy` for the password. The struct ends up correct.
+- The WiFi driver (`esp_wifi_set_config`) would reject credentials longer than the spec anyway.
+
+**Safe input limits:** SSID ≤ 31 bytes, password ≤ 63 bytes. These are also within the WPA2 passphrase range (8–63 bytes).
+
+### UART
+
+- TX/RX pins are swapped (`uart_set_pin(UART_NUM_1, 18, 17, ...)`) because the physical connector is wired straight-through (pin 1 to pin 1). This is intentional for the current hardware.
+- Parity is set to `UART_PARITY_ODD` — both ends of the UART link use odd parity.

@@ -14,6 +14,8 @@
 pair_s pair;
 uart_s uart;
 
+QueueHandle_t wait_for_wifi_to_connect;
+
 void uart_s::init()
 {
     // uart_driver_install(uart_port_t uart_num, int rx_buffer_size, int tx_buffer_size, int queue_size, QueueHandle_t *uart_queue, int intr_alloc_flags);
@@ -81,7 +83,7 @@ std::string pair_s::receive()
 
     // find the command and update the position
     int cmd_byte = (uint8_t)pair_receive[message_pos + 1];
-    char cmd_rec = pair_receive[message_pos + 1];
+    uint8_t cmd_rec = (uint8_t)pair_receive[message_pos + 1];
     message_pos += 1;
     printf("  CMD: 0x%02x ('%c'), message_pos=%d\n", cmd_byte, cmd_rec, message_pos);
 
@@ -144,9 +146,12 @@ std::string pair_s::receive()
     {
         // Parse JSON fields from validated payload
         std::string home_ssid = jsonparser(payload.c_str(), "homessid");
+        storage.store("ssid", home_ssid.c_str());
         printf("Home SSID: %s\n", home_ssid.c_str());
 
         std::string home_pass = jsonparser(payload.c_str(), "homepass");
+        storage.store("pass", home_pass.c_str());
+        wifi_start(storage.read("ssid"), storage.read("pass"));
         printf("Home Pass: %s\n", home_pass.c_str());
 
         std::string permanent_pass = jsonparser(payload.c_str(), "permpass");
@@ -164,7 +169,14 @@ std::string pair_s::receive()
         std::string raspberrypi_ip = jsonparser(payload.c_str(), "raspberrypiip");
         printf("RaspberryPi IP: %s\n", raspberrypi_ip.c_str());
 
-        pair.send("{\"pairing payload\" : \"received\"}", cmd_s::MOBILE_PAIRING);
+        bool received;
+        if (xQueueReceive(wait_for_wifi_to_connect, &received, pdMS_TO_TICKS(5000))){
+            pair.send("{\"pairing payload\" : \"received\", \"wifiConnection\" : \"true\"}", cmd_s::MOBILE_PAIRING);
+        }
+        else {
+            pair.send("{\"pairing payload\" : \"received\", \"wifiConnection\" : \"false\"}", cmd_s::MOBILE_PAIRING);
+        }
+
         break;
     }
     default:

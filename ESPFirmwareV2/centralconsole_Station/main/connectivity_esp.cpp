@@ -1,3 +1,4 @@
+#include "connectivity.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_event_base.h"
@@ -5,6 +6,7 @@
 #include "display.h"
 
 static const char *TAG = "Wifi";
+
 
 static void wifi_event_handler(void *event_handler_arg,
                                esp_event_base_t event_base,
@@ -27,6 +29,8 @@ static void wifi_event_handler(void *event_handler_arg,
     }
     if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_CONNECTED))
     {
+        bool queue_flag_for_wifi_connection = true;
+        xQueueSend(wait_for_wifi_to_connect, &queue_flag_for_wifi_connection, pdMS_TO_TICKS(5000));
         ESP_LOGI(TAG, "Connected");
     }
     if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_DISCONNECTED))
@@ -54,21 +58,22 @@ void wifi_init()
     wifi_init_config_t wifi_driver_config = WIFI_INIT_CONFIG_DEFAULT();
     esp_wifi_init(&wifi_driver_config);
 
-    wifi_config_t station_configuration = {};
-    memcpy(station_configuration.sta.ssid, "espwifi", sizeof("espwifi"));
-    memcpy(station_configuration.sta.password, "23012003", sizeof("23012003"));
+    // wifi_config_t station_configuration = {};
+    // memcpy(station_configuration.sta.ssid, ssid.c_str(), ssid.size() + 1);
+    // memcpy(station_configuration.sta.password, password.c_str(), password.size() + 1);
 
-    // wifi_config_t accesspoint_configuration = {};
-    // const char* ap_ssid = "espwifi";
-    // const char* ap_password = "23012003";
-    // memcpy(accesspoint_configuration.ap.ssid, ap_ssid, strlen(ap_ssid) + 1);
-    // memcpy(accesspoint_configuration.ap.password, ap_password, strlen(ap_password) + 1);
-    // accesspoint_configuration.ap.authmode = WIFI_AUTH_WPA2_PSK;
-    // accesspoint_configuration.ap.max_connection = 5;
-    // accesspoint_configuration.ap.channel = 11;
+    // esp_wifi_set_config(WIFI_IF_STA, &station_configuration);
+    // esp_wifi_set_mode(WIFI_MODE_STA);
+    // esp_wifi_start();
+}
+
+void wifi_start(std::string ssid, std::string password){
+    esp_wifi_stop();
+    wifi_config_t station_configuration = {};
+    memcpy(station_configuration.sta.ssid, ssid.c_str(), ssid.size() + 1);
+    memcpy(station_configuration.sta.password, password.c_str(), password.size() + 1);
 
     esp_wifi_set_config(WIFI_IF_STA, &station_configuration);
-    // esp_wifi_set_config(WIFI_IF_AP, &accesspoint_configuration);
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_start();
 }

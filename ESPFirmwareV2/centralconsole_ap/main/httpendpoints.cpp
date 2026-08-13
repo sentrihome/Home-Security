@@ -51,7 +51,7 @@ esp_err_t api_pair_resp(httpd_req_t *r)
 
     std::string response_full;
     std::string *response_full_ptr = nullptr;
-    if (xQueueReceive(waitfors3, &response_full_ptr, pdMS_TO_TICKS(5000)))
+    if (xQueueReceive(waitfors3, &response_full_ptr, pdMS_TO_TICKS(6000)))
     {
         response_full = *response_full_ptr;
         delete response_full_ptr;
@@ -60,11 +60,17 @@ esp_err_t api_pair_resp(httpd_req_t *r)
     {
         return httpd_resp_send_408(r);
     }
-    std::string response_partsed = jsonparser(response_full.c_str(), "pairing payload");
-    if (response_partsed == "received")
+    std::string response_parsed_for_payload = jsonparser(response_full.c_str(), "pairing payload");
+    std::string response_parsed_for_connection = jsonparser(response_full.c_str(), "wifiConnection");
+    if ((response_parsed_for_payload == "received") && (response_parsed_for_connection == "true"))
     {
         printf("Received Confirmation from S3\n");
-        return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"ok\" }");
+        return httpd_resp_sendstr(r, "{\"pairing payload\" : \"received\", \"wifiConnection\" : \"true\"}");
+    }
+    else if ((response_parsed_for_payload == "received") && (response_parsed_for_connection == "false"))
+    {
+        printf("Received Confirmation from S3\n");
+        return httpd_resp_sendstr(r, "{\"pairing payload\" : \"received\", \"wifiConnection\" : \"false\"}");
     }
     else
     {
