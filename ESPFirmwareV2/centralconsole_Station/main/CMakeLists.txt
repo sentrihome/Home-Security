@@ -1,5 +1,5 @@
 idf_component_register(SRCS "core.cpp" "jsonhandler.cpp" "app_uart.cpp" "connectivity_esp.cpp" "main.cpp"
-                           
+                            "storage.cpp"
                             "display.cpp"
                             "uielements.c"
                        PRIV_REQUIRES spi_flash

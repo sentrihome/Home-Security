@@ -80,7 +80,7 @@ std::string uart_s::receive()
 
     // find the command and update the position
     int cmd_byte = (uint8_t)pair_receive[message_pos + 1];
-    char cmd_rec = pair_receive[message_pos + 1];
+    uint8_t cmd_rec = (uint8_t)pair_receive[message_pos + 1];
     message_pos += 1;
     printf("  CMD: 0x%02x ('%c'), message_pos=%d\n", cmd_byte, cmd_rec, message_pos);
 

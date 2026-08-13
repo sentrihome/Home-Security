@@ -1,6 +1,6 @@
 # ESP32 Central Console — esp2 (HTTP → UART Passthrough AP)
 
-This variant of the home security central console firmware runs an ESP32 as a **WiFi Access Point** that exposes HTTP endpoints for receiving configuration parameters (SSID, passwords, OTP, schedule) from a client device, then relays them via UART1 to external sensor/actuator hardware.
+This variant of the home security central console firmware runs an ESP32 as a **WiFi Access Point** that exposes HTTP endpoints for receiving configuration parameters from a client device, then relays them via UART1 to external sensor/actuator hardware.
 
 ## Quick Start
 
@@ -18,20 +18,48 @@ Connect to WiFi network `espwifi` (password: `23012003`) from your client device
 
 ## Endpoints
 
-| Method | Path | Query Param | Purpose |
+| Method | Path | Body | Purpose |
 |---|---|---|---|
 | `GET` | `/health` | — | Liveness check, returns `{ "health": "ok" }` |
-| `POST` | `/pass` | `password` | Receive permanent password |
-| `POST` | `/ssid` | `ssid` | Receive Wi-Fi SSID |
-| `POST` | `/permanentpass` | `permanentpass` | Receive permanent pass (redundant with `/pass`) |
-| `POST` | `/encryptedpass` | `encryptedpass` | Receive encrypted password |
-| `POST` | `/otp` | `otp` | Receive one-time password |
-| `POST` | `/schedule` | `schedulestart` | Set schedule start time |
-| `POST` | `/schedule` | `schedulestop` | Set schedule stop time |
+| `POST` | `/pair` | JSON | Receive pairing config (SSID, passwords, schedule, Pi IP) |
 
-All POST handlers extract the named query parameter, forward its value to the UART-connected sensor device, and return a JSON ack.
+### `/pair` Request/Response
 
-## Wiring / Pinout
+**Request body (JSON):**
+```json
+{
+  "homessid": "mywifi",
+  "homepass": "password123",
+  "permpass": "0309",
+  "encryptedpass": "abc...",
+  "schedulestart": "08:00",
+  "schedulestop": "22:00",
+  "raspberrypiip": "192.168.0.236"
+}
+```
+
+**Success response:** `{ "pairing payload received": "ok" }`
+**Failure response:** `{ "pairing payload received": "corrupted" }` or HTTP 408 on timeout
+
+The ESP forwards the raw JSON to the sensor over UART, waits up to 5 seconds for a response, then relays the result back.
+
+## UART Frame Format
+
+Bidirectional framing between ESP32 and sensor hardware:
+
+```
+SYNC(2B) | CMD(1B) | LEN(2B BE) | PAYLOAD(N) | CRC(2B BE)
+```
+
+| Field | Size | Description |
+|---|---|---|
+| SYNC | 2 bytes | `0x63 0x38` ("c8") |
+| CMD | 1 byte | Command type (currently 0x00 = MOBILE_PAIRING) |
+| LEN | 2 bytes | Payload length, big-endian |
+| PAYLOAD | N bytes | The actual data |
+| CRC | 2 bytes | `cmd_int + 2 * payload_len`, big-endian |
+
+### Pinout
 
 | Peripheral | ESP32 Pin(s) | Notes |
 |---|---|---|
@@ -40,31 +68,37 @@ All POST handlers extract the named query parameter, forward its value to the UA
 | UART1 RTS | GPIO4 | Hardware flow control (disabled) |
 | UART1 CTS | GPIO5 | Hardware flow control (disabled) |
 
-## Known Problems (TODO)
+## Architecture
 
-### Critical — Must Fix Before Production
+```
+Client Device ──HTTP POST /pair──> ESP32 (AP: espwifi)
+                                       │
+                                       ▼
+                                  UART1 (230120 baud)
+                                       │
+                                       ▼
+                              External Sensor Hardware
+                                       │
+                       ◄───────────────┘
+                  (response via same frame format)
+```
 
-1. **No authentication on credential endpoints** — Anyone connected to the AP WiFi can submit passwords, OTPs, and schedules over HTTP with zero access control. An attacker within WiFi range can configure the entire security system.
-   - *Fix:* Add at least a shared-secret token parameter to all POST requests; prefer challenge-response or session-based auth.
+- **Single-threaded main loop** — `while(true)` polls `uart.receive()` every 100ms. HTTP handlers and UART share the same thread.
+- **Queue-based response handling** — Sensor responses are sent via a 1-slot FreeRTOS queue (`waitfors3`). The `/pair` handler waits up to 5s for a response.
+- **No persistent storage** — Credentials are passed through to UART and forgotten. Nothing stored in NVS.
 
-2. **Credentials logged in plaintext** — Every credential endpoint does `printf("... extracted part %s\n", extract)` which dumps secrets to UART debug output. Anyone with serial console access can read submitted credentials.
-   - *Fix:* Remove `printf` of extracted values; log only the parameter name, not its content.
+## Assumptions & Design Constraints
 
-3. **Duplicate `/schedule` URI** — Both schedule start and stop handlers register the same path (`/schedule`, method POST). `esp_http_server` silently rejects duplicates (last registration wins), meaning one schedule endpoint is completely broken with no error or log warning.
-   - *Fix:* Use distinct paths: `/schedule/start` and `/schedule/stop`.
+- **Payloads are always small (< 200 bytes)** — The UART frame parser reads into a 200-byte buffer and trusts the `LEN` field from the frame header. This works because all payloads (config JSON, sensor data) are well under 200 bytes. No explicit bounds check on `payload_len` against the remaining frame data — the code assumes one frame per UART read from a trusted sensor.
 
-### Important — Should Fix
+- **Plaintext credential logging accepted** — All POST handlers log submitted values via `printf` to the UART debug console. This is intentional for development and accepted because the device will be deployed in a physically inaccessible location where serial console access is not a realistic threat.
 
-4. **No input validation on forwarded parameters** — HTTP query strings are passed directly to UART with no length, charset, or format checks. A parameter longer than 200 bytes corrupts the receive buffer in `app_uart.cpp`.
-   - *Fix:* Validate length and strip control characters per endpoint type before calling `uart_send()`.
+- **Queue-based response handling** — `waitfors3` is a 1-slot queue of `std::string*` (created in `httpendpoints.cpp:80`). Writer (`app_uart.cpp:142-143`) allocates with `new`, sends non-blocking (`ticks=0`). Reader (`httpendpoints.cpp:54`) waits up to 5s, then `delete`s. The only leak path: sensor sends two responses before handler reads the first, causing `xQueueSend` to fail silently on the second. This is practically unreachable because the sensor sends exactly one response per command and the handler is blocked waiting — so the queue never overflows. If it ever does, the fix is to check `xQueueSend` return value and `delete` on failure.
 
-5. **Buffer overflow risk in `uart_send()`** — The `"END_OF_MESSAGE"` delimiter is appended with no size check against the 200-byte transmit buffer. If a parameter fills most of the buffer, the delimiter writes past its bounds.
-   - *Fix:* Check remaining space before appending the delimiter; truncate or reject oversized inputs.
+## Known Issues
 
-6. **Blocking single-loop architecture** — The `while(true)` / `delay(2000)` main loop means HTTP handlers and UART polling compete for the same thread. Long UART reads will block incoming HTTP requests and vice versa.
-   - *Fix:* Use FreeRTOS tasks (one for the HTTP server, one for UART polling) or non-blocking I/O with task notifications.
-
-### Nice-to-Have
-
-7. **WiFi credentials hardcoded** — AP SSID/password are in plaintext source code and in `sdkconfig`. Acceptable for prototyping but should be configurable at first boot or stored in NVS.
-8. **No HTTPS/TLS** — All credentials travel in cleartext over the HTTP-to-ESP link. Even on a local network, an evil-NAP attack can intercept them.
+- **No authentication on `/pair`** — Any device on the AP WiFi can submit credentials. Acceptable for prototyping; add token-based auth before production.
+- **Blocking main loop** — HTTP handlers and UART polling compete on the same thread. Use FreeRTOS tasks for production.
+- **Weak checksum** — The CRC is an additive hash (`cmd + 2*len`) that doesn't include payload bytes. Sufficient for short, low-noise UART links but not for noisy environments.
+- **Hardcoded WiFi credentials** — AP SSID/password in plaintext source code. Acceptable for prototyping; use NVS or first-boot provisioning for production.
+- **Outdated documentation** — The old query-string endpoints (`/pass`, `/ssid`, `/otp`, etc.) have been replaced by the single `/pair` JSON endpoint. The git history still references them.

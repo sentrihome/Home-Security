@@ -137,3 +137,11 @@ The `pytest_hello_world.py` covers: generic target test, macOS host test, Linux 
 - **Blocking main loop** — `delay(2000)` in the while(true) tick means nothing runs between polls; long UART reads will block HTTP handlers and vice versa
 - **Shared global buffer** — `uart_message[200]` is a single mutable global with no mutex or double-buffering; concurrent access from loop poll and any async callback would corrupt data
 - **WiFi AP is always-on** with hardcoded credentials in plaintext source code
+
+## Assumptions & Design Constraints
+
+- **Payloads are always small (< 200 bytes)** — The UART frame parser in `app_uart.cpp` reads into a 200-byte buffer and trusts the `LEN` field from the frame header. This works because all payloads (config JSON, sensor data) are well under 200 bytes. No explicit bounds check on `payload_len` against the remaining frame data — the code assumes one frame per UART read from a trusted sensor.
+
+- **Plaintext credential logging accepted** — All POST handlers log submitted values via `printf` to the UART debug console. This is intentional for development and accepted because the device will be deployed in a physically inaccessible location where serial console access is not a realistic threat.
+
+- **Queue-based response handling** — `waitfors3` is a 1-slot queue of `std::string*` (created in `httpendpoints.cpp:80`). Writer (`app_uart.cpp:142-143`) allocates with `new`, sends non-blocking (`ticks=0`). Reader (`httpendpoints.cpp:54`) waits up to 5s, then `delete`s. The only leak path: sensor sends two responses before handler reads the first, causing `xQueueSend` to fail silently on the second. This is practically unreachable because the sensor sends exactly one response per command and the handler is blocked waiting — so the queue never overflows. If it ever does, the fix is to check `xQueueSend` return value and `delete` on failure.

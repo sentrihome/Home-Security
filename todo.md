@@ -30,7 +30,7 @@ Build the part of the system that has zero external dependencies (no Pi, no app,
 
 2. [ ] Implement the confirmed command set (§9): home WiFi creds, connection result, sensor event relay, status/heartbeat. Leave the two Phase-0-dependent commands (motion-relay tagging, arm/disarm-to-sensor) until Phase 0 lands.
    - [x] `MOBILE_PAIRING` — cmd_s enum, dispatch switch, frame send/receive with CMD param, async response queue (esp2)
-   - [ ] `CONNECTION_RESULT` — S3 → WROOM WiFi join ack
+   - [x] `CONNECTION_RESULT` — S3 → WROOM WiFi join ack
    - [ ] `SENSOR_EVENT` — WROOM → S3 ongoing telemetry
    - [ ] `STATUS_HEARTBEAT` — S3 → WROOM liveness ping
 

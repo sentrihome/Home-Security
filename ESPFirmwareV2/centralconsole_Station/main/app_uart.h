@@ -5,6 +5,10 @@
 #include "driver/uart.h"
 #include "string.h"
 #include <string>
+#include "storage.h"
+#include "connectivity.h"
+#include "freertos/queue.h"
+
 
 enum class cmd_s : int
 {
@@ -30,4 +34,7 @@ private:
 
 extern pair_s pair;
 extern uart_s uart;
+
+extern QueueHandle_t wait_for_wifi_to_connect;
+
 #endif // APP_UART_H
