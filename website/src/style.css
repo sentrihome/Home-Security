@@ -1,0 +1,874 @@
+/* SentriHome — project page.
+ *
+ * Type does the work here, not colour. Three roles only:
+ *   Instrument Serif — statements. High contrast, editorial, the thing you read first.
+ *   Geist            — body and UI. Variable weight carries the hierarchy.
+ *   Geist Mono       — labels, numbers, status. Never for prose.
+ *
+ * Palette is a warm near-black ground with a single amber accent, used sparingly
+ * enough that it still means something when it appears.
+ */
+
+@import '@fontsource/instrument-serif/400.css';
+@import '@fontsource/instrument-serif/400-italic.css';
+@import '@fontsource-variable/geist/wght.css';
+@import '@fontsource-variable/geist-mono/wght.css';
+
+:root {
+  /* Ground — warm neutral, not blue */
+  --bg: #0b0a09;
+  --bg-lift: #100e0c;
+  --hair: #211e1a;
+  --hair-soft: #191713;
+
+  /* Ink */
+  --ink: #f4f1ec;
+  --ink-2: #b8b1a6;
+  --ink-3: #8a8377;
+  /* ink-4 is the quietest step, but it still carries labels at ~0.7rem, so it
+     is held above a 4.5:1 ratio on the ground rather than pushed darker. */
+  --ink-4: #7a7364;
+
+  /* The one accent */
+  --accent: #e8833a;
+  --accent-dim: #8a5228;
+
+  --serif: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
+  --sans: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --shell: 1100px;
+  --pad: clamp(1.25rem, 5vw, 3rem);
+  --gutter: max(var(--pad), calc(50vw - var(--shell) / 2));
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  /* Deliberately no overflow-x here. Clipping the root element stops the canvas
+     stage's `position: sticky` from engaging, which unpins the whole story.
+     Horizontal overflow is prevented at source instead — see the drift clamp in
+     main.ts, which keeps chapter copy inside the gutter. */
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 17px;
+  font-weight: 350;
+  line-height: 1.6;
+  letter-spacing: -0.003em;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 400;
+}
+
+p {
+  margin: 0;
+}
+
+/* ── Type scale ───────────────────────────────────────────────────────────── */
+
+/* Statements: serif, tight, large. This is the first thing the eye lands on. */
+.t-display {
+  font-family: var(--serif);
+  font-weight: 400;
+  line-height: 0.94;
+  letter-spacing: -0.024em;
+  font-size: clamp(3rem, 9.5vw, 8rem);
+}
+
+.t-statement {
+  font-family: var(--serif);
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -0.018em;
+  font-size: clamp(2.1rem, 5.2vw, 3.9rem);
+}
+
+.t-heading {
+  font-family: var(--serif);
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: -0.014em;
+  font-size: clamp(1.6rem, 3vw, 2.35rem);
+}
+
+/* Sub-headings switch to the sans at high weight — the contrast in *texture*
+   between serif and sans does more for hierarchy than another size step. */
+.t-sub {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.02rem;
+  letter-spacing: -0.011em;
+  line-height: 1.35;
+}
+
+.t-body {
+  color: var(--ink-2);
+  font-size: 1.02rem;
+  font-weight: 350;
+}
+
+.t-body--lead {
+  font-size: clamp(1.08rem, 1.9vw, 1.3rem);
+  font-weight: 300;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.t-label {
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.t-mono {
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
+  color: var(--ink-3);
+}
+
+em {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.06em;
+  color: var(--ink);
+}
+
+strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  font-weight: 400;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+
+a {
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+.shell {
+  width: 100%;
+  max-width: var(--shell);
+  margin-inline: auto;
+  padding-inline: var(--pad);
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+
+.skip:focus {
+  left: 1rem;
+  top: 1rem;
+  z-index: 100;
+  background: var(--bg-lift);
+  padding: 0.75rem 1rem;
+}
+
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/* ── Reading rail ─────────────────────────────────────────────────────────── */
+
+.rail {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 1px;
+  z-index: 50;
+  background: var(--hair-soft);
+}
+
+.rail__fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+
+/* ── Links ────────────────────────────────────────────────────────────────── */
+
+/* No buttons-as-boxes. Links are underlines that thicken on hover. */
+.link {
+  display: inline-block;
+  text-decoration: none;
+  font-weight: 450;
+  font-size: 0.98rem;
+  padding-block: 0.15rem;
+  border-bottom: 1px solid var(--hair);
+  transition: border-color 0.25s, color 0.25s;
+}
+
+.link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Mixed case on purpose: uppercased mono turns "HackED" into "HACKED". */
+.link--lead {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+  border-bottom-color: var(--ink-4);
+}
+
+.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.75rem;
+  margin-top: 2.75rem;
+}
+
+/* ── Hero ─────────────────────────────────────────────────────────────────── */
+
+.hero {
+  position: relative;
+  min-height: 100svh;
+  display: grid;
+  align-content: center;
+  padding-block: 6rem 4rem;
+  text-align: center;
+}
+
+.hero .shell {
+  display: grid;
+  justify-items: center;
+}
+
+.hero__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 2.25rem;
+}
+
+.pulse {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
+.hero__lede {
+  max-width: 36rem;
+  margin-top: 1.8rem;
+  text-wrap: balance;
+}
+
+.hero__figures {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: clamp(2rem, 5vw, 4rem);
+  margin-top: 3.75rem;
+}
+
+.figure {
+  text-align: center;
+}
+
+/* Four across becomes a tidy 2×2 rather than two ragged centred rows. */
+@media (max-width: 640px) {
+  .hero__figures {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2rem 1rem;
+    width: 100%;
+    max-width: 22rem;
+  }
+}
+
+.figure__value {
+  font-family: var(--serif);
+  font-size: 2.4rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.figure__label {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  margin-top: 0.5rem;
+}
+
+.hero__hint {
+  margin-top: 4rem;
+  animation: breathe 3s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.85; }
+}
+
+/* ── Morph story ──────────────────────────────────────────────────────────── */
+
+.story {
+  position: relative;
+}
+
+.story__stage {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.story__stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.story__stage--static {
+  position: relative;
+  height: auto;
+  padding-block: 2rem;
+}
+
+.story__fallback {
+  text-align: center;
+  padding-inline: var(--pad);
+}
+
+.story__track {
+  position: relative;
+  z-index: 1;
+  margin-top: -100svh;
+}
+
+/* Each chapter is a full viewport; the anchor class decides where in that
+   viewport the copy sits, so the composition changes as you read. */
+.chapter {
+  min-height: 100svh;
+  display: grid;
+  padding: 6rem var(--gutter);
+  will-change: opacity, transform;
+}
+
+.chapter__inner {
+  max-width: 27rem;
+}
+
+.chapter[data-pos='center'] { place-content: center; justify-items: center; text-align: center; }
+
+/* Centred copy has the full column to work with, so it gets a wider measure. */
+.chapter[data-pos='center'] .chapter__inner,
+.chapter[data-pos='t'] .chapter__inner,
+.chapter[data-pos='b'] .chapter__inner {
+  max-width: 33rem;
+}
+
+.chapter[data-pos='tl'] { place-content: start start; }
+.chapter[data-pos='tr'] { place-content: start end; text-align: right; }
+.chapter[data-pos='bl'] { place-content: end start; }
+.chapter[data-pos='br'] { place-content: end end; text-align: right; }
+.chapter[data-pos='l']  { place-content: center start; }
+.chapter[data-pos='r']  { place-content: center end; text-align: right; }
+.chapter[data-pos='t']  { place-content: start center; justify-items: center; text-align: center; }
+.chapter[data-pos='b']  { place-content: end center; justify-items: center; text-align: center; }
+
+/* A phone has no horizontal room to dodge into, so the composition splits
+   vertically instead: the shape takes the upper band, the copy anchors to the
+   bottom. Keeps them from ever sitting on top of each other. */
+@media (max-width: 780px) {
+  .chapter,
+  .chapter[data-pos] {
+    place-content: end center;
+    justify-items: center;
+    text-align: center;
+    padding: 3.5rem var(--pad) 3rem;
+  }
+
+  .chapter .chapter__inner {
+    max-width: 32rem;
+  }
+}
+
+/* Landscape phones and short windows: not enough height for the vertical split,
+   so tighten the copy to buy the shape its band back. */
+@media (max-height: 620px) and (max-width: 900px) {
+  .chapter,
+  .chapter[data-pos] {
+    padding-block: 2rem 1.75rem;
+  }
+
+  .chapter__title {
+    font-size: clamp(1.5rem, 4.6vw, 2rem);
+    margin-bottom: 0.6rem;
+  }
+
+  .chapter__index {
+    margin-bottom: 0.6rem;
+  }
+
+  .chapter__body {
+    font-size: 0.92rem;
+  }
+}
+
+.chapter__index {
+  display: block;
+  margin-bottom: 1.1rem;
+  color: var(--ink-4);
+}
+
+.chapter__title {
+  margin-bottom: 1.1rem;
+  text-wrap: balance;
+  /* The cloud dodges the copy, so this only has to cover stray drifting points. */
+  text-shadow: 0 0 28px var(--bg), 0 0 60px var(--bg);
+}
+
+.chapter__body {
+  text-shadow: 0 0 24px var(--bg), 0 0 48px var(--bg);
+}
+
+/* ── Sections ─────────────────────────────────────────────────────────────── */
+
+.section {
+  position: relative;
+  z-index: 2;
+  background: var(--bg);
+  padding-block: clamp(5rem, 11vw, 9rem);
+  border-top: 1px solid var(--hair-soft);
+}
+
+.section__head {
+  max-width: 42rem;
+  margin-bottom: clamp(3rem, 6vw, 4.5rem);
+}
+
+.section__label {
+  display: block;
+  margin-bottom: 1.2rem;
+}
+
+.section__lede {
+  margin-top: 1.4rem;
+}
+
+/* ── Status: a dot and a word, no box ─────────────────────────────────────── */
+
+.status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex: none;
+}
+
+.status::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex: none;
+  transform: translateY(-1px);
+}
+
+/* Only "shipped" earns the accent. Everything else is stated in grey — the
+   hierarchy is the point, not decoration. */
+.status--shipped { color: var(--accent); }
+.status--shipped::before { background: var(--accent); }
+
+.status--partial { color: var(--ink-3); }
+.status--partial::before {
+  background: linear-gradient(90deg, var(--ink-3) 50%, transparent 50%);
+  box-shadow: inset 0 0 0 1px var(--ink-4);
+}
+
+.status--designed { color: var(--ink-4); }
+.status--designed::before { box-shadow: inset 0 0 0 1px var(--ink-4); }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--hair-soft);
+}
+
+.legend > span {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.legend .t-mono {
+  font-size: 0.72rem;
+}
+
+/* ── Pillars: a ruled list, not a card grid ───────────────────────────────── */
+
+.pillars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--hair);
+}
+
+.pillar {
+  display: grid;
+  gap: 0.5rem 3rem;
+  padding-block: 2.25rem;
+  border-bottom: 1px solid var(--hair);
+  transition: background 0.3s;
+}
+
+@media (min-width: 62rem) {
+  .pillar {
+    grid-template-columns: 1.5rem 1fr 1.15fr auto;
+    align-items: start;
+  }
+}
+
+.pillar__num {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--ink-4);
+  padding-top: 0.4rem;
+}
+
+.pillar__title {
+  padding-top: 0.15rem;
+}
+
+.pillar__body > p + p {
+  margin-top: 0.85rem;
+}
+
+.pillar__status {
+  padding-top: 0.5rem;
+}
+
+.pillar__notes {
+  margin-top: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+/* These carry real information — what shipped and what didn't — so they sit a
+   step brighter than the purely decorative labels. */
+.note {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--ink-3);
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+}
+
+.note::before {
+  content: '+';
+  color: var(--ink-4);
+  flex: none;
+}
+
+.note--gap::before {
+  content: '–';
+}
+
+/* The one that matters most gets space, not colour. */
+.pillar--feature .pillar__title {
+  font-size: clamp(1.8rem, 3.4vw, 2.6rem);
+}
+
+.pillar--feature {
+  padding-block: 3.25rem;
+}
+
+/* ── Phases ───────────────────────────────────────────────────────────────── */
+
+.phases {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+
+.phase {
+  display: grid;
+  gap: 1.25rem 3rem;
+  padding-block: 3rem;
+  border-top: 1px solid var(--hair);
+}
+
+.phase:last-child {
+  border-bottom: 1px solid var(--hair);
+}
+
+@media (min-width: 62rem) {
+  .phase {
+    grid-template-columns: 10rem 1fr;
+  }
+}
+
+.phase__aside {
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+}
+
+.phase__num {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.phase__title {
+  margin-bottom: 1.2rem;
+}
+
+.phase__body > p + p {
+  margin-top: 0.9rem;
+}
+
+/* Hardware/stack lists read as prose-adjacent, not as chips */
+.stack {
+  list-style: none;
+  margin: 1.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-3);
+}
+
+.stack li::after {
+  content: '·';
+  color: var(--ink-4);
+  margin-inline: 0.6rem;
+}
+
+.stack li:last-child::after {
+  content: '';
+}
+
+.stack .retired {
+  color: var(--ink-4);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* ── HackED ───────────────────────────────────────────────────────────────── */
+
+.hacked {
+  display: grid;
+  gap: clamp(2.5rem, 5vw, 4.5rem);
+}
+
+@media (min-width: 62rem) {
+  .hacked {
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+  }
+}
+
+.pull {
+  font-family: var(--serif);
+  font-size: clamp(1.5rem, 3.2vw, 2.2rem);
+  line-height: 1.15;
+  letter-spacing: -0.014em;
+  color: var(--accent);
+  margin-block: 1.75rem 2.25rem;
+}
+
+.quote {
+  margin: 0;
+  padding-left: clamp(1.5rem, 3vw, 2.5rem);
+  border-left: 1px solid var(--hair);
+}
+
+.quote p {
+  font-family: var(--serif);
+  font-size: clamp(1.35rem, 2.8vw, 1.9rem);
+  line-height: 1.24;
+  letter-spacing: -0.012em;
+}
+
+.quote footer {
+  margin-top: 1.5rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink-4);
+}
+
+/* ── People ───────────────────────────────────────────────────────────────── */
+
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--hair);
+}
+
+.person {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  flex-wrap: wrap;
+  padding-block: 1.5rem;
+  border-bottom: 1px solid var(--hair);
+}
+
+/* Name takes the row, commit count and handle drop below it. */
+.person__name {
+  min-width: 8rem;
+}
+
+.person img {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  filter: grayscale(1) contrast(1.05);
+  opacity: 0.85;
+  flex: none;
+  transition: filter 0.3s, opacity 0.3s;
+}
+
+.person:hover img {
+  filter: none;
+  opacity: 1;
+}
+
+.person__name {
+  flex: 1 1 auto;
+}
+
+.person__commits {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.person__handle {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink-3);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.25s, border-color 0.25s;
+}
+
+.person:hover .person__handle {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ── Closing ──────────────────────────────────────────────────────────────── */
+
+.closing {
+  text-align: center;
+}
+
+.closing .section__head {
+  margin-inline: auto;
+  margin-bottom: 2.5rem;
+}
+
+.closing .link-row {
+  justify-content: center;
+}
+
+.footer {
+  padding-block: 3rem;
+  border-top: 1px solid var(--hair-soft);
+}
+
+.footer .shell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.footer__links {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.footer__links a {
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.footer__links a:hover {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Motion preferences ───────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .hero__hint {
+    animation: none;
+  }
+
+  .chapter {
+    min-height: auto;
+    padding-block: 3rem;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  .story__track {
+    margin-top: 0;
+  }
+}

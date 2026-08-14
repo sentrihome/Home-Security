@@ -6,6 +6,7 @@ mobile/dist/
 *.mp4
 *.ts
 !mobile/**/*.ts
+!website/**/*.ts
 .env
 credentials.json
 .DS_Store
@@ -20,3 +21,12 @@ test.mp4
 .DS_Store
 __pycache__
 .idea
+
+# Detection model weights — fetched + sha256-verified by
+# rasberry-pi-setup/scripts/fetch-detection-model.sh, never committed.
+*.caffemodel
+rasberry-pi-setup/**/models/
+
+# Website build output — GitHub Actions builds and deploys website/dist.
+website/dist/
+website/node_modules/
