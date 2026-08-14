@@ -37,5 +37,6 @@ extern "C" void app_main(void)
     display.init();
     display.process();
     pair.receive();
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }

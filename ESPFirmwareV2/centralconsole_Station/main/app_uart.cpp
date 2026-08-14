@@ -46,7 +46,7 @@ SYNC(2B) | CMD(1B) | LEN(2B) | PAYLOAD | CRC(1-2B), bidirectional, plaintext
 std::string pair_s::receive()
 {
     char pair_receive[200];
-    int length = uart_read_bytes(UART_NUM_1, pair_receive, sizeof(pair_receive) - 1, 100);
+    int length = uart_read_bytes(UART_NUM_1, pair_receive, sizeof(pair_receive) - 1, pdMS_TO_TICKS(100));
     if (length <= 0)
     {
         return "";
