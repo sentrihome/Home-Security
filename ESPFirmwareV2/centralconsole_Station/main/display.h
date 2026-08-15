@@ -15,11 +15,14 @@ private:
     {
         UNARMED,
         ARMED,
-        SETTINGS
+        SETTINGS,
+        SETUP_INSTRUCTIONS
     };
     Page state;
     void unarmed();
     void armed();
+    void settings();
+    void setupInstructions();
 };
 
 class Touch
