@@ -9,8 +9,6 @@ class Display
 public:
     void init();
     void process();
-
-private:
     enum Page
     {
         UNARMED,
@@ -19,6 +17,8 @@ private:
         SETUP_INSTRUCTIONS
     };
     Page state;
+
+private:
     void unarmed();
     void armed();
     void settings();
@@ -33,3 +33,5 @@ public:
     uint16_t x;
     uint16_t y;
 };
+
+extern Display display;

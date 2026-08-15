@@ -72,6 +72,11 @@ esp_err_t api_pair_resp(httpd_req_t *r)
         printf("Received Confirmation from S3\n");
         return httpd_resp_sendstr(r, "{\"pairing payload\" : \"received\", \"wifiConnection\" : \"false\"}");
     }
+    else if ((response_parsed_for_payload == "NO ACCESS"))
+    {
+        printf("No access from S3\n");
+        return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"NO ACCESS\" }");
+    }
     else
     {
         printf("Received bad data from S3\n");

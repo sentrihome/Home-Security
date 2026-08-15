@@ -6,6 +6,7 @@
 
 TFT_eSPI tft;
 Touch touch;
+Display display;
 
 bool app_wifi_station_start = false;
 
@@ -103,7 +104,7 @@ void Touch::debug()
 void Display::process()
 {
     touch.read();
-    touch.debug();
+    // touch.debug();
     if ((touch.x >= 1982) && (touch.x <= 2432) && (touch.y >= 350) && (touch.y <= 803))
     {
         if (state == UNARMED)
