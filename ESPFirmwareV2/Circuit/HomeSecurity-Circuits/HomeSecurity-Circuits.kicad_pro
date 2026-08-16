@@ -464,7 +464,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "Untitled.kicad_pro",
+    "filename": "HomeSecurity-Circuits.kicad_pro",
     "version": 3
   },
   "net_settings": {
@@ -483,8 +483,8 @@
         "priority": 2147483647,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
         "track_width": 1.5,
-        "via_diameter": 0.6,
-        "via_drill": 0.3,
+        "via_diameter": 1.2,
+        "via_drill": 0.6,
         "wire_width": 6
       }
     ],
@@ -500,7 +500,7 @@
       "gencad": "",
       "idf": "",
       "netlist": "",
-      "plot": "../../../../../3dPrint/testtracks/",
+      "plot": "/Users/anuragkoushik/Desktop/Deployment/Home-Security/ESPFirmwareV2/Circuit/Circuit Drawings/",
       "pos_files": "",
       "specctra_dsn": "",
       "step": "",

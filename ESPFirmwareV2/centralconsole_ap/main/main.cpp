@@ -12,6 +12,8 @@ extern "C" void app_main(void)
     wifi_init();
     endpoint_init();
     uart.init();
+    ap_start("espwifi", "23012003");
+
 
     while (true)
     {

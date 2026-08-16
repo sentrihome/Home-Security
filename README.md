@@ -100,7 +100,7 @@ flowchart TB
 | Component | Role | WiFi / Network Mode | Responsibilities |
 |---|---|---|---|
 | ESP32-S3 | Central console | Station (home WiFi) | Display, keypad (PIN entry for disarm — see §20), stores home WiFi creds, stores sensor keys, **stores the disarm PIN in NVS**, relays credentials/status to console WROOM over UART. Motion/event relay toward Pi confirmed required — see §16, §20. |
-| ESP32-WROOM (console-side) | Sensor hub / pairing surface | Access Point (persistent, "HomeSecurity" network) | Hosts sensor network, relays sensor data to S3 via UART, validates sensor auth (`sensor_key`), generates pairing credentials and the sensor-network PSK |
+| ESP32-WROOM (console-side) | Sensor hub / pairing surface | Access Point (persistent, currently `"espwifi"` — SSID string is not a hard spec requirement, any static value works) | Hosts sensor network, relays sensor data to S3 via UART, validates sensor auth (`sensor_key`), generates pairing credentials and the sensor-network PSK |
 | ESP32-WROOM (sensor units) | Sensors | Station → connects to console WROOM's AP | Motion/door/etc. detection, sends events authenticated with `sensor_key`. Currently the system's only motion-alert trigger — see §19. |
 | Raspberry Pi | Setup relay, PSK backup, product hub | AP (setup only) → Station (post-setup, static IP `192.168.0.236`) | **Initializes first, before console provisioning — see §4, §13.** SoftAP (`pi-setup-*`) then one Python **`pi_hub`** on `:4000` (live HLS, clips, Drive — D20). Owns the camera (monitoring/live only for now — §19); FCM/ntfy alerts; Tailscale live; Drive clip upload; PSK backup pending §16 |
 | Mobile App (React Native, `mobile/`) | Orchestrator / client | N/A | Walks the user through both the Pi setup flow and the console/sensor provisioning flow, holds home WiFi creds in memory only during setup, stores the sensor-network PSK for future pairing, saves the Pi host, registers for push (FCM/ntfy), handles Google OAuth and hands the refresh token to the Pi, plays live (via Tailscale) and clips (via Drive) |
@@ -109,7 +109,7 @@ flowchart TB
 
 **Confirmed: the console has a physical keypad**, used for PIN entry on disarm (§20). **The PIN itself is stored in S3 NVS**, not on the Pi — this creates a flagged tension with the Pi-as-state-authority decision, see §20. **No local audio/siren hardware is planned for initial release** — the console is display + keypad only; Bluetooth speaker support (as a post-launch siren option) is roadmap, not v1.
 
-**Key architectural point:** the console WROOM's AP is *not* home WiFi — it's a separate, persistent local network ("HomeSecurity network") that only the S3 (via UART) and paired sensors ever touch. The S3 never joins this network over WiFi. Separately, the Pi runs on the actual home LAN with its own static IP, reachable by the phone directly and, once §16 is resolved, by the S3.
+**Key architectural point:** the console WROOM's AP is *not* home WiFi — it's a separate, persistent local network (currently named `"espwifi"`, but the name itself isn't a spec requirement — see §22 item 6 for the planned move to per-unit SSIDs) that only the S3 (via UART) and paired sensors ever touch. The S3 never joins this network over WiFi. Separately, the Pi runs on the actual home LAN with its own static IP, reachable by the phone directly and, once §16 is resolved, by the S3.
 
 ### 2.1 ESP32 Architecture Diagram
 
@@ -123,7 +123,7 @@ flowchart TB
     NVSs[(S3 NVS<br/>home WiFi creds<br/>sensor_keys, disarm PIN)]
   end
 
-  subgraph HSNet [" HomeSecurity Network — persistent AP, WPA2 "]
+  subgraph HSNet [" Console WROOM's Persistent AP — WPA2, SSID not spec-fixed "]
     CW[ESP32-WROOM<br/>Console Hub]
     NVSc[(WROOM NVS<br/>sensor PSK<br/>paired sensor_keys)]
     CW --- NVSc
@@ -155,7 +155,7 @@ flowchart TB
 - **Dashed arrows** — one-time setup/pairing traffic over a temporary WPA2 setup AP (§4, §5, §6).
 - **Double solid arrows (`==`)** — the framed UART link between WROOM and S3 (§9), carrying both provisioning handoff and ongoing sensor-event relay.
 - **Single solid arrows** — persistent WiFi connections: sensors to the console WROOM's AP (network-level PSK + application-level `sensor_key`, §7), and the S3 to the home router.
-- **Two distinct WiFi networks, never bridged over the air:** home WiFi (S3 only) and the HomeSecurity network (WROOM + sensors). The only link between them is the physical UART trace inside the enclosure (§23).
+- **Two distinct WiFi networks, never bridged over the air:** home WiFi (S3 only) and the console WROOM's persistent AP network (WROOM + sensors — SSID currently `"espwifi"`, not a fixed spec value). The only link between them is the physical UART trace inside the enclosure (§23).
 
 ---
 
@@ -194,10 +194,10 @@ Goal: get the S3 onto home WiFi and generate the sensor-network PSK, using the p
 2. Phone connects to the console WROOM's setup AP (unique per-unit credentials, WPA2-secured — §6, §10).
 3. Phone sends the home WiFi SSID/pass to the WROOM.
 4. WROOM relays the credentials to the S3 over UART (framed — §9).
-5. S3 attempts to join home WiFi as a station, bounded timeout (~15–20s).
+5. S3 attempts to join home WiFi as a station, bounded timeout (~9s), signaled on `IP_EVENT_STA_GOT_IP` (not `WIFI_EVENT_STA_CONNECTED` — association without a leased IP must not report success).
 6. S3 reports the connection result (success or specific failure reason) back to WROOM over UART.
-7. On success: WROOM generates a random, high-entropy sensor-network PSK (§7) and a MAC-derived SSID, if not already generated on first boot. Brings up its persistent AP under these credentials and sends the PSK back to the phone over the still-open setup link.
-8. Phone stores the PSK for future sensor pairing. WROOM's setup AP closes / transitions to sensor-hub-only mode.
+7. On success: WROOM generates a random, high-entropy sensor-network PSK (§7), if not already generated on first boot. SSID is a static, fixed string (`"espwifi"`) — not MAC-derived (see §22 item 6 for the planned move to per-unit SSIDs). Brings up its persistent AP under these credentials and sends the PSK back to the phone over the still-open setup link.
+8. Phone stores the PSK for future sensor pairing. WROOM's setup AP closes / transitions to sensor-hub-only mode. **Currently commented out in firmware** for debugging — the setup AP is left running past this point so pairing traffic can be inspected/retried without a fresh flash cycle. Must be re-enabled before this leaves dev.
 9. WROOM sends the PSK to the S3 over UART; the S3 pushes a copy to the Pi for backup (§16, Pi↔S3 link) — this step depends on §16's transport being finalized; it is not yet a working link.
 10. On failure: see §8.
 
@@ -222,22 +222,22 @@ Done once per sensor, any time after console provisioning, using the PSK the pho
 
 ## 6. Default AP Credentials (Setup-Time)
 
-Every device that ever runs a temporary setup AP (Pi, console WROOM, sensor WROOMs) must use **unique-per-unit** credentials, not a shared default — this closes the eavesdropping window during setup, where anyone knowing a common default could intercept home WiFi or PSK credentials as they're relayed through.
+**Current state: hardcoded shared default.** All units currently ship with the same fixed setup AP credentials, baked into firmware — not per-unit, not batch-derived. This reopens the eavesdropping window the design intends to close: anyone who knows the shared default (e.g. from a leaked unit, teardown, or public firmware) could intercept home WiFi or PSK credentials on any other unit's setup AP during provisioning.
 
-**Approach:** batch-unique credentials at minimum (shipped per manufacturing batch), with an upgrade path to fully per-device derived credentials:
+**Planned: unique-per-unit credentials**, not a shared default — this is the fix for the above. Target approach: batch-unique credentials at minimum (shipped per manufacturing batch), with an upgrade path to fully per-device derived credentials:
 
 ```
 ap_password = HMAC(batch_secret, MAC_address) → encode → print on label/QR
 ```
 
-No provisioning database required — each unit derives its own password locally and deterministically at boot from its own MAC address and a batch secret baked into firmware at flash time.
+No provisioning database required — each unit would derive its own password locally and deterministically at boot from its own MAC address and a batch secret baked into firmware at flash time. Not yet implemented — see §22.
 
-Requirements regardless of tier:
+Requirements regardless of tier (apply today, independent of hardcoded-vs-derived):
 
-- Setup AP is WPA2-secured using the unique password — never open (§10).
+- Setup AP is WPA2-secured using the current password — never open (§10).
 - Setup AP auto-closes after a timeout (2–5 minutes) if no provisioning occurs.
 - Re-entering setup/pairing mode after timeout requires a physical button press, not an always-available AP.
-- The printed label/QR must not be visible on the outside of retail packaging (§23).
+- The printed label/QR (once per-unit derivation lands) must not be visible on the outside of retail packaging (§23). Not applicable yet under the current shared-default state — there's nothing unit-specific to print.
 
 ---
 
@@ -248,7 +248,7 @@ Four distinct secrets exist on the ESP32 side. They must not be conflated:
 | Secret | Generated by | Purpose | Stored where |
 |---|---|---|---|
 | Home WiFi SSID/pass | User (typed once) | Lets S3 join home WiFi | S3 NVS only — WROOM does not persist it, only relays via UART |
-| Sensor-network PSK | Console WROOM (random, high-entropy, ~20-char alphanumeric via `esp_random()`) | WPA2 password for the WROOM's persistent AP | Phone app (primary), Pi (backup — pending §16), WROOM NVS |
+| Sensor-network PSK | Console WROOM (random, high-entropy, 32-char alphanumeric via `esp_random()`) | WPA2 password for the WROOM's persistent AP | Phone app (primary), Pi (backup — pending §16), WROOM NVS |
 | `sensor_key` | Console WROOM, generated uniquely per sensor during pairing | Application-layer authentication of each sensor after WiFi connection | WROOM NVS (per paired sensor), sensor's own NVS |
 | Disarm PIN | User, set via the mobile app | Authorizes disarm from the console keypad or the app — see §20 | **S3 NVS.** This is the odd one out: unlike the other three, it's not device-provisioning material, and its storage location creates a flagged tension with the Pi being the arm/disarm state authority — see §20. |
 
@@ -262,18 +262,14 @@ Terminology note: nothing here is literal SSID encryption — SSIDs broadcast in
 
 ## 8. Failure Handling (Provisioning)
 
-| Failure | Detection | App behavior |
-|---|---|---|
-| Wrong password | `WIFI_EVENT_STA_DISCONNECTED` reason code | Re-prompt for password only, keep SSID |
-| SSID not found | Reason code / scan miss | Prompt to check SSID, and check if network is 2.4GHz (ESP32 has no 5GHz support — flag proactively, not just on failure) |
-| Weak signal / generic failure | Timeout without a specific reason code | Suggest moving the console closer to the router |
-| Central console link timeout during pairing | WROOM-side timeout on S3 UART response | Show "connecting..." status, then timeout message; retry |
+**Confirmed: binary outcome only.** The S3 reports `wifiConnection: true` or `wifiConnection: false` over UART — no reason code is surfaced to the WROOM, the phone, or the app. Wrong password, SSID not found, weak signal, and any other `WIFI_EVENT_STA_DISCONNECTED` cause all collapse to the same `false`. The app's only recourse on failure is to let the user retry.
+
+`wifi_event_sta_disconnected_t->reason` is captured firmware-side (S3) at the point of disconnect but intentionally not forwarded over UART or wired into any command — available for future use if reason-level UX is ever built, but out of scope now.
 
 Rules:
 
 - Setup AP (WROOM or Pi) stays alive across a failed attempt — not torn down until success is confirmed.
-- Retries capped (3–5). After that, require the physical setup button to restart the flow, so the user can't get stuck in a silent retry loop.
-- WROOM relays specific failure reasons to the phone, not just generic success/fail.
+- No retry cap on the S3's underlying `esp_wifi_connect()` reconnect loop — it retries indefinitely on disconnect. This is by design: a `false` result has already reached the phone, so the user can re-enter credentials and trigger a fresh attempt at any time; capping retries and requiring a physical button adds friction without a corresponding safety need here (contrast §12's sensor reconnect, where the no-fallback cap is a deliberate anti-jamming measure, not a UX one).
 
 ---
 
@@ -652,12 +648,13 @@ Consolidated list, roughly in priority order for what blocks further design vs. 
 3. **PSK backup auth**: confirm the §13 "paired device token" is meant to also authenticate the §11 PSK backup push (recommended, not yet stated).
 4. **Re-provisioning vs. factory reset**: whether changing home WiFi (router replaced, password changed) and "forget all sensors" are the same physical action or distinct ones. **Explicitly deferred (TBD)** — not a near-term blocker.
 5. **Sensor message integrity beyond `sensor_key`**: replay protection, if any sensor reading is ever used to drive an action rather than just display/log data.
-6. **Multi-console households**: confirm MAC-derived SSIDs avoid collisions between two consoles in one home.
+6. **Multi-console households / MAC-derived SSID (planned, not yet implemented)**: SSID is currently a static string (`"espwifi"`) for every unit — fine for a single console, but indistinguishable between two consoles in one home. Planned fix: move to a MAC-derived SSID per unit (D19 already establishes this doesn't need to be high-entropy/secret, just unique — SSIDs broadcast in cleartext regardless).
 7. **OTA update mechanism and signing**, once devices are in the field with unique per-device secrets.
 8. **Pairing UX at the 10-sensor cap**: exact behavior when pairing is attempted while the WROOM AP is at or near capacity.
 9. **Clip retention policy** on the Pi's local cache after a successful Drive upload.
 10. **Unify the phone-mediated secret handoffs** (home WiFi creds → S3, sensor PSK → Pi, disarm PIN → S3, Drive refresh token → Pi) into one documented primitive rather than four separately-designed ones (§7, §18).
 11. **System-wide gaps not yet designed at all**: sensor power/battery management, internet-outage alert fallback (what happens to alerting if home internet is down, since the whole pipeline routes through the Pi to FCM/ntfy), tamper detection, multi-user/multi-phone pairing, general event history/log (which, per §20, will only ever cover armed-state activity by design), and full Pi API authentication coverage. None of these have a home in this document yet.
+12. **§6 — per-unit setup AP credential derivation (planned, not yet implemented)**: setup AP credentials are currently a hardcoded shared default across all units, not batch- or MAC-derived. Reopens the eavesdropping concern §6 was written to close. HMAC(batch_secret, MAC_address) approach is specified but not built — needs to land before manufacturing/label pipeline (§23) can proceed.
 
 ---
 
@@ -681,3 +678,9 @@ Consolidated list, roughly in priority order for what blocks further design vs. 
 | 2026-08-02 | Resolved the topology question from the previous entry: **confirmed the Pi talks directly to the S3, not the WROOM.** Renamed §16 to "Pi ↔ S3 Link (Confirmed Endpoints, Transport TBD)." Removed the WROOM hop from the PIN-set flow (§20) and the conditional UART command it required (§9) — the disarm PIN never touches the WROOM. Updated D9, quick-nav, and all cross-references accordingly. Removed the now-resolved topology item from Open Items (§22). |
 | 2026-08-02 | **Full-document audit for repeated/systemic issues.** Fixed: duplicated "Terminology note" paragraph in §7 (verbatim copy-paste artifact); stale §4 step 9 still saying the WROOM pushes the PSK to the Pi (contradicted the confirmed Pi↔S3-only topology, now corrected to WROOM→S3→Pi); stale §1 diagram/prose still framing the S3-Pi link as fully unspecified and labeled "Act 6" (updated to reflect confirmed endpoints, transport TBD); §2.1 diagram not reflecting the confirmed keypad/PIN-in-NVS hardware (added). Flagged a new open item: whether arm/disarm state propagates to individual sensors or is enforced centrally (§9, §22 item 2) — §9's "commands relayed onward to sensors" line and §20's "sensors relay only while armed" line don't obviously describe the same mechanism. Noted as a general pattern: diagrams in this document have repeatedly lagged behind text-level decisions and need a deliberate check on each revision, not just prose cross-references. |
 | 2026-08-03 | **D20 — Pi software stack.** SoftAP stays Python; product features run as one `pi_hub` Flask process after home Wi‑Fi (live HLS + clips + Drive stubs). Explicitly rejected reviving Node `rasberry_pi_app` / cloud `:3001` as product. Expanded §13 with boot handoff, hub API table, and deploy instructions (`deploy-to-pi.sh`). Updated §2 Pi row, §21 out-of-scope, and `rasberry-pi-setup` docs. |
+| 2026-08-15 | **§4/§8 — provisioning result firmware fix.** Confirmed the S3 must signal WiFi join result on `IP_EVENT_STA_GOT_IP`, not `WIFI_EVENT_STA_CONNECTED` — association without a leased IP was reporting false success, silently killing the §16 alert path with no error surfaced anywhere. Updated §4 step 5 timeout from ~15–20s to ~9s accordingly. Collapsed §8's reason-code failure table to a confirmed binary `true`/`false` outcome — disconnect reason is captured firmware-side but not forwarded over UART or into app UX. Retry cap dropped from §8's rules: S3's reconnect loop retries indefinitely by design, since the phone already receives `false` and can re-trigger the flow without a physical-button requirement. §9/D16 reviewed and confirmed unchanged — both already specified `SYNC: 0xAA 0x55`; the `'c'`/`'8'` sync bytes seen in review were a firmware bug, not a spec deviation. |
+| 2026-08-15 | **§7 — PSK length.** Sensor-network PSK confirmed as 32-char alphanumeric (was ~20-char) — within the 63-char WPA2 PSK limit, higher entropy for the shared network secret. |
+| 2026-08-15 | **§4 — SSID confirmed static, not MAC-derived.** WROOM's persistent AP SSID is a fixed string (`"espwifi"`) for now; MAC-derivation moved from §4 step 7 to a planned item under §22 item 6, scoped to solving multi-console SSID collisions later. No security impact per D19 — SSID uniqueness was never load-bearing, only the PSK is. |
+| 2026-08-15 | **§4 step 8 — flagged as dev-only state.** Setup-AP-close/transition-to-hub-only is currently commented out in firmware for debugging (setup AP stays up past pairing so traffic can be inspected without reflashing). Documented as a known pre-ship gap, not a spec change — must be re-enabled before release. |
+| 2026-08-15 | **§6 — confirmed setup AP credentials are currently a hardcoded shared default**, not batch- or MAC-derived. Per-unit derivation (`HMAC(batch_secret, MAC_address)`) moved to a planned item under §22 item 12 — reopens the eavesdropping window §6 exists to close until implemented; flagged as a manufacturing-pipeline (§23) dependency. |
+| 2026-08-15 | **§2 — confirmed the console WROOM's persistent AP SSID name is not a hard spec requirement.** Doc previously named it `"HomeSecurity"` as if fixed; updated §2, §2.1 diagram, and diagram-reading notes to describe it generically (currently `"espwifi"`, any static value is acceptable). Does not affect §22 item 6 (per-unit/MAC-derived SSID), which remains the tracked planned change; this only removes the specific fixed-name requirement, not the uniqueness question. Pi's `"HomeSecurity-Setup"` SoftAP name (§13) is unaffected — separate device, separate flow. |

@@ -61,9 +61,9 @@ std::string uart_s::receive()
     int message_pos = 0;
     for (int i = 0; i < length - 1; i++)
     {
-        if ((pair_receive[i] == 'c') && !sync_rec)
+        if ((pair_receive[i] == 0xAA) && !sync_rec)
         {
-            if (pair_receive[i + 1] == '8')
+            if (pair_receive[i + 1] == 0x55)
             {
                 printf("  Sync found at index %d (0x%02x 0x%02x)\n", i, (uint8_t)pair_receive[i], (uint8_t)pair_receive[i + 1]);
                 message_pos = i + 1;

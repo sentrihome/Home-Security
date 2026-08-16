@@ -8,6 +8,7 @@
 #include "storage.h"
 #include "connectivity.h"
 #include "freertos/queue.h"
+#include "pair.h"
 
 
 enum class cmd_s : int
@@ -19,20 +20,14 @@ struct uart_s
 {
 public:
     void init();
-};
-
-struct pair_s
-{
-public:
     std::string receive();
     void send(std::string transmission, cmd_s cmd);
-
 private:
-    std::string sync0 = "c";
-    std::string sync1 = "8";
+    std::string sync0 = "\xAA";
+    std::string sync1 = "\x55";
 };
 
-extern pair_s pair;
+
 extern uart_s uart;
 
 extern QueueHandle_t wait_for_wifi_to_connect;

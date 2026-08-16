@@ -9,17 +9,20 @@ class Display
 public:
     void init();
     void process();
-
-private:
     enum Page
     {
         UNARMED,
         ARMED,
-        SETTINGS
+        SETTINGS,
+        SETUP_INSTRUCTIONS
     };
     Page state;
+
+private:
     void unarmed();
     void armed();
+    void settings();
+    void setupInstructions();
 };
 
 class Touch
@@ -30,3 +33,5 @@ public:
     uint16_t x;
     uint16_t y;
 };
+
+extern Display display;
