@@ -94,6 +94,14 @@ std::string uart_s::receive()
     uint16_t payload_len = ((uint8_t)length_rec[0] << 8) | (uint8_t)length_rec[1];
     printf("  Payload length: %u, message_pos=%d\n", payload_len, message_pos);
 
+    // bounds check: ensure there are enough bytes for payload + 2 CRC bytes
+    if (message_pos + payload_len + 2 > length)
+    {
+        printf("  Frame too small for declared payload: need %d, have %d\n",
+               message_pos + payload_len + 2, length);
+        return "";
+    }
+
     // extract the payload and update the position
     if (payload_len == 0)
     {
@@ -140,7 +148,10 @@ std::string uart_s::receive()
     case cmd_s::MOBILE_PAIRING:
     {
         std::string *p = new std::string(payload);
-        xQueueSend(waitfors3, &p, 0);
+        if (xQueueSend(waitfors3, &p, 0) != pdPASS)
+        {
+            delete p;
+        }
         break;
     }
     default:

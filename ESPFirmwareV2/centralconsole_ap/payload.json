@@ -1,1 +1,8 @@
-{"homessid":"Koushik", "homepass":"10022024", "permpass":"0309", "encryptedpass":"jkasdniwu39289doin00932"}
+{
+    "homessid": "Koushik",
+    "homepass": "10022024",
+    "permpass": "0309",
+    "encryptedpass": "jkasdniwu39289doin00932",
+    "RaspberryPiIP" : "192.116.160.160",
+    "securitykey" : "1023"
+}
