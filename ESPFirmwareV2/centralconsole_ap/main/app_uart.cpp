@@ -61,9 +61,9 @@ std::string uart_s::receive()
     int message_pos = 0;
     for (int i = 0; i < length - 1; i++)
     {
-        if ((pair_receive[i] == 'c') && !sync_rec)
+        if ((pair_receive[i] == 0xAA) && !sync_rec)
         {
-            if (pair_receive[i + 1] == '8')
+            if (pair_receive[i + 1] == 0x55)
             {
                 printf("  Sync found at index %d (0x%02x 0x%02x)\n", i, (uint8_t)pair_receive[i], (uint8_t)pair_receive[i + 1]);
                 message_pos = i + 1;
@@ -93,6 +93,14 @@ std::string uart_s::receive()
     printf("  LEN bytes: 0x%02x 0x%02x\n", (uint8_t)length_rec[0], (uint8_t)length_rec[1]);
     uint16_t payload_len = ((uint8_t)length_rec[0] << 8) | (uint8_t)length_rec[1];
     printf("  Payload length: %u, message_pos=%d\n", payload_len, message_pos);
+
+    // bounds check: ensure there are enough bytes for payload + 2 CRC bytes
+    if (message_pos + payload_len + 2 > length)
+    {
+        printf("  Frame too small for declared payload: need %d, have %d\n",
+               message_pos + payload_len + 2, length);
+        return "";
+    }
 
     // extract the payload and update the position
     if (payload_len == 0)
@@ -140,7 +148,10 @@ std::string uart_s::receive()
     case cmd_s::MOBILE_PAIRING:
     {
         std::string *p = new std::string(payload);
-        xQueueSend(waitfors3, &p, 0);
+        if (xQueueSend(waitfors3, &p, 0) != pdPASS)
+        {
+            delete p;
+        }
         break;
     }
     default:

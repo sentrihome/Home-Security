@@ -6,6 +6,7 @@
 
 TFT_eSPI tft;
 Touch touch;
+Display display;
 
 bool app_wifi_station_start = false;
 
@@ -20,10 +21,10 @@ void Display::init()
     if (!startup_phase_1)
     {
         tft.init();
-        log("Display Initialized");
-        log("Setting Background to black");
+        printf("Display Initialized\n");
+        printf("Setting Background to black\n");
         tft.fillScreen(0x0000);
-        log("Rotation to landscape");
+        printf("Rotation to landscape\n");
         tft.setRotation(1);
         tft.setCursor(0, 0);
         tft.setTextSize(1);
@@ -53,22 +54,38 @@ void Display::init()
 
 void Display::unarmed()
 {
-    log("State unarmed, sending ui");
+    printf("State unarmed, sending ui\n");
     tft.pushImage(17, 8, 113, 16, (const uint16_t *)uisysdisarmed);
     tft.pushImage(30, 124, 36, 36, (const uint16_t *)uisysdisarmed2);
     tft.pushImage(402, 129, 48, 28, (const uint16_t *)uisysdisarmed3);
     state = UNARMED;
-    log("Screening uiunarmed, state unarmed");
+    printf("Screening uiunarmed, state unarmed\n");
 }
 
 void Display::armed()
 {
-    log("State armed, sending ui");
+    printf("State armed, sending ui\n");
     tft.pushImage(17, 8, 113, 16, (const uint16_t *)uisysarmed);
     tft.pushImage(30, 124, 36, 36, (const uint16_t *)uisysarmed2);
     tft.pushImage(402, 129, 48, 28, (const uint16_t *)uisysarmed3);
     state = ARMED;
-    log("Screening uiarmed, state armed");
+    printf("Screening uiarmed, state armed\n");
+}
+
+void Display::settings()
+{
+    printf("State settings\n");
+    tft.pushImage(1, 35, 478, 250, (const uint16_t *)uisettingspage_map);
+    state = SETTINGS;
+    printf("Screening uisettings, state settings\n");
+}
+
+void Display::setupInstructions()
+{
+    printf("State setup instructions\n");
+    tft.pushImage(1, 35, 478, 250, (const uint16_t *)uisetupinstructions_map);
+    state = SETUP_INSTRUCTIONS;
+    printf("Screening uisetupinstructions, state setup_instructions\n");
 }
 
 void Touch::read()
@@ -78,15 +95,16 @@ void Touch::read()
 
 void Touch::debug()
 {
-    Serial.printf("x: %i     ", x);
-    Serial.printf("y: %i     ", y);
-    Serial.printf("z: %i \n", tft.getTouchRawZ());
+    printf("x: %i     ", x);
+    printf("y: %i     ", y);
+    printf("z: %i \n", tft.getTouchRawZ());
     delay(250);
 }
 
 void Display::process()
 {
     touch.read();
+    // touch.debug();
     if ((touch.x >= 1982) && (touch.x <= 2432) && (touch.y >= 350) && (touch.y <= 803))
     {
         if (state == UNARMED)
@@ -97,6 +115,39 @@ void Display::process()
         else if (state == ARMED)
         {
             unarmed();
+            delay(80);
+        }
+    }
+    if ((touch.x >= 1023) && (touch.x <= 1695) && (touch.y >= 380) && (touch.y <= 3775))
+    {
+        if (state == UNARMED || state == ARMED)
+        {
+            settings();
+            delay(80);
+        }
+    }
+    if (state == SETTINGS)
+    {
+        if ((touch.x >= 2800) && (touch.x <= 3600) && (touch.y >= 3500) && (touch.y <= 3900))
+        {
+            state = UNARMED;
+            tft.setSwapBytes(true);
+            tft.pushImage(1, 35, 478, 250, (const uint16_t *)uihomepageUNarmed_map);
+            delay(80);
+        }
+        if ((touch.x >= 1984) && (touch.x <= 2687) && (touch.y >= 519) && (touch.y <= 3711))
+        {
+            setupInstructions();
+            delay(80);
+        }
+    }
+    if (state == SETUP_INSTRUCTIONS)
+    {
+        if ((touch.x >= 2800) && (touch.x <= 3600) && (touch.y >= 3500) && (touch.y <= 3900))
+        {
+            state = SETTINGS;
+            tft.setSwapBytes(true);
+            tft.pushImage(1, 35, 478, 250, (const uint16_t *)uisettingspage_map);
             delay(80);
         }
     }

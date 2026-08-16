@@ -3,8 +3,6 @@
 #include "app_uart.h"
 #include "storage.h"
 
-Display display;
-
 // void setup(){
 //   Serial.begin(115200);
 //   display.init();
@@ -36,7 +34,6 @@ extern "C" void app_main(void)
   {
     display.init();
     display.process();
-    pair.receive();
-    vTaskDelay(pdMS_TO_TICKS(10));
+    uart.receive();
   }
 }

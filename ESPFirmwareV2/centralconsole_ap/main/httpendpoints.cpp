@@ -1,4 +1,8 @@
 #include "httpendpoints.h"
+#include "connectivity.h"
+#include <cstring>
+#include <esp_wifi.h>
+#include <esp_random.h>
 
 QueueHandle_t waitfors3;
 
@@ -45,8 +49,6 @@ esp_err_t api_pair_resp(httpd_req_t *r)
     uart.send(buf, cmd_s::MOBILE_PAIRING);
     printf("Relayed the data through UART");
 
-    int timeout = 0;
-
     printf("Awaiting S3 Confirmation\n");
 
     std::string response_full;
@@ -65,16 +67,43 @@ esp_err_t api_pair_resp(httpd_req_t *r)
     if ((response_parsed_for_payload == "received") && (response_parsed_for_connection == "true"))
     {
         printf("Received Confirmation from S3\n");
-        return httpd_resp_sendstr(r, "{\"pairing payload\" : \"received\", \"wifiConnection\" : \"true\"}");
+
+        char ap_password[33];
+        for (int i = 0; i < 32; i++)
+        {
+            ap_password[i] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[esp_random() % 62];
+        }
+        ap_password[32] = '\0';
+        printf("New AP Password: %s\n", ap_password);
+
+        //uart.send(ap_password, cmd_s::MOBILE_PAIRING);
+        printf("Sent new AP password to sensor via UART\n");
+
+        // ap_start("espwifi", ap_password);
+
+        char resp_buf[256];
+        snprintf(resp_buf, sizeof(resp_buf),
+                 "{\"pairing payload\" : \"received\", \"wifiConnection\" : \"true\", \"new_ap_password\" : \"%s\"}",
+                 ap_password);
+        printf("http resp: {\"pairing payload\" : \"received\", \"wifiConnection\" : \"true\", \"new_ap_password\" : \"newpass\"}\n");
+        return httpd_resp_sendstr(r, resp_buf);
     }
     else if ((response_parsed_for_payload == "received") && (response_parsed_for_connection == "false"))
     {
         printf("Received Confirmation from S3\n");
+        printf("http resp {\"pairing payload\" : \"received\", \"wifiConnection\" : \"false\"}\n");
         return httpd_resp_sendstr(r, "{\"pairing payload\" : \"received\", \"wifiConnection\" : \"false\"}");
+    }
+    else if ((response_parsed_for_payload == "NO ACCESS"))
+    {
+        printf("No access from S3\n");
+        printf("http resp { \"pairing payload received\": \"NO ACCESS\" }\n");
+        return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"NO ACCESS\" }");
     }
     else
     {
         printf("Received bad data from S3\n");
+        printf("http resp { \"pairing payload received\": \"corrupted\" }\n");
         return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"corrupted\" }");
     }
 

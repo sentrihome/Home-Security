@@ -11,10 +11,7 @@
 // Flags to allocate an interrupt
 // The function allocates the required internal resources for the UART driver.
 
-pair_s pair;
 uart_s uart;
-
-QueueHandle_t wait_for_wifi_to_connect;
 
 void uart_s::init()
 {
@@ -43,7 +40,7 @@ The locked frame format is
 SYNC(2B) | CMD(1B) | LEN(2B) | PAYLOAD | CRC(1-2B), bidirectional, plaintext
 */
 
-std::string pair_s::receive()
+std::string uart_s::receive()
 {
     char pair_receive[200];
     int length = uart_read_bytes(UART_NUM_1, pair_receive, sizeof(pair_receive) - 1, pdMS_TO_TICKS(100));
@@ -64,9 +61,9 @@ std::string pair_s::receive()
     printf("\n");
     for (int i = 0; i < length - 1; i++)
     {
-        if ((pair_receive[i] == 'c') && !sync_rec)
+        if ((pair_receive[i] == 0xAA) && !sync_rec)
         {
-            if (pair_receive[i + 1] == '8')
+            if (pair_receive[i + 1] == 0x55)
             {
                 printf("  Sync found at index %d (0x%02x 0x%02x)\n", i, (uint8_t)pair_receive[i], (uint8_t)pair_receive[i + 1]);
                 message_pos = i + 1;
@@ -144,38 +141,7 @@ std::string pair_s::receive()
     {
     case cmd_s::MOBILE_PAIRING:
     {
-        // Parse JSON fields from validated payload
-        std::string home_ssid = jsonparser(payload.c_str(), "homessid");
-        storage.store("ssid", home_ssid.c_str());
-        printf("Home SSID: %s\n", home_ssid.c_str());
-
-        std::string home_pass = jsonparser(payload.c_str(), "homepass");
-        storage.store("pass", home_pass.c_str());
-        wifi_start(storage.read("ssid"), storage.read("pass"));
-        printf("Home Pass: %s\n", home_pass.c_str());
-
-        std::string permanent_pass = jsonparser(payload.c_str(), "permpass");
-        printf("Permanent Pass: %s\n", permanent_pass.c_str());
-
-        std::string encrypted_pass = jsonparser(payload.c_str(), "encryptedpass");
-        printf("Encrypted Pass: %s\n", encrypted_pass.c_str());
-
-        std::string schedule_start = jsonparser(payload.c_str(), "schedulestart");
-        printf("Schedule Start: %s\n", schedule_start.c_str());
-
-        std::string schedule_stop = jsonparser(payload.c_str(), "schedulestop");
-        printf("Schedule Stop: %s\n", schedule_stop.c_str());
-
-        std::string raspberrypi_ip = jsonparser(payload.c_str(), "raspberrypiip");
-        printf("RaspberryPi IP: %s\n", raspberrypi_ip.c_str());
-
-        bool received;
-        if (xQueueReceive(wait_for_wifi_to_connect, &received, pdMS_TO_TICKS(5000))){
-            pair.send("{\"pairing payload\" : \"received\", \"wifiConnection\" : \"true\"}", cmd_s::MOBILE_PAIRING);
-        }
-        else {
-            pair.send("{\"pairing payload\" : \"received\", \"wifiConnection\" : \"false\"}", cmd_s::MOBILE_PAIRING);
-        }
+        pair.process(payload);
 
         break;
     }
@@ -187,7 +153,7 @@ std::string pair_s::receive()
     return payload;
 }
 
-void pair_s::send(std::string transmission, cmd_s cmd)
+void uart_s::send(std::string transmission, cmd_s cmd)
 {
 
     int length_val = transmission.length();
