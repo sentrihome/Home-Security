@@ -66,7 +66,7 @@ Client Device ──HTTP POST /pair──> ESP32 (AP: espwifi)
                                      ▼
                           Companion ESP32-S3 firmware (station)
                                      │
-                     ◄──────────────┘
+                      ◄──────────────┘
                   (response via same frame format)
 ```
 
