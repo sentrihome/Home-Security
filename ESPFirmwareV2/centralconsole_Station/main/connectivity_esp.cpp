@@ -29,8 +29,6 @@ static void wifi_event_handler(void *event_handler_arg,
     }
     if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_CONNECTED))
     {
-        bool queue_flag_for_wifi_connection = true;
-        xQueueSend(wait_for_wifi_to_connect, &queue_flag_for_wifi_connection, pdMS_TO_TICKS(5000));
         ESP_LOGI(TAG, "Connected");
     }
     if ((event_base == WIFI_EVENT) && (event_id == WIFI_EVENT_STA_DISCONNECTED))
@@ -40,6 +38,8 @@ static void wifi_event_handler(void *event_handler_arg,
     }
     if ((event_base == IP_EVENT) && (event_id == IP_EVENT_STA_GOT_IP))
     {
+        bool queue_flag_for_wifi_connection = true;
+        xQueueSend(wait_for_wifi_to_connect, &queue_flag_for_wifi_connection, pdMS_TO_TICKS(5000));
         ESP_LOGI(TAG, "Got IP ");
     }
 }
@@ -72,8 +72,9 @@ void wifi_start(std::string ssid, std::string password){
     wifi_config_t station_configuration = {};
     memcpy(station_configuration.sta.ssid, ssid.c_str(), ssid.size() + 1);
     memcpy(station_configuration.sta.password, password.c_str(), password.size() + 1);
-
+    
     esp_wifi_set_config(WIFI_IF_STA, &station_configuration);
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_start();
+    xQueueReset(wait_for_wifi_to_connect);
 }

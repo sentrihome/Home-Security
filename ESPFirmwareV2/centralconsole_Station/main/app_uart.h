@@ -23,8 +23,8 @@ public:
     std::string receive();
     void send(std::string transmission, cmd_s cmd);
 private:
-    std::string sync0 = "c";
-    std::string sync1 = "8";
+    std::string sync0 = "\xAA";
+    std::string sync1 = "\x55";
 };
 
 

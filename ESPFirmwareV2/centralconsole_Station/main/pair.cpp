@@ -9,10 +9,18 @@ void pair_s::process(std::string payload){
     if (display.state == Display::Page::SETUP_INSTRUCTIONS){
         // Parse JSON fields from validated payload
         std::string home_ssid = jsonparser(payload.c_str(), "homessid");
+        if (home_ssid == "__JSON_ERROR__"){
+            uart.send("{\"pairing payload\" : \"INVALID JSON\"}", cmd_s::MOBILE_PAIRING);
+            return;
+        }
         storage.store("ssid", home_ssid.c_str());
         printf("Home SSID: %s\n", home_ssid.c_str());
-    
+
         std::string home_pass = jsonparser(payload.c_str(), "homepass");
+        if (home_pass == "__JSON_ERROR__"){
+            uart.send("{\"pairing payload\" : \"INVALID JSON\"}", cmd_s::MOBILE_PAIRING);
+            return;
+        }
         storage.store("pass", home_pass.c_str());
         wifi_start(storage.read("ssid"), storage.read("pass"));
         printf("Home Pass: %s\n", home_pass.c_str());

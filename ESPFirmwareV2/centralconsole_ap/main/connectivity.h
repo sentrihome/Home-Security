@@ -5,6 +5,7 @@
 // #endif
 
 void wifi_init(void);
+void ap_start(const char *ssid, const char *password);
 
 // #ifdef __cplusplus
 // }
