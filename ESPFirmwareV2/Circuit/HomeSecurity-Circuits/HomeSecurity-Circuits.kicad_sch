@@ -2610,7 +2610,7 @@
 				)
 			)
 		)
-		(property "Footprint" "customespfootprint:esp32wroom"
+		(property "Footprint" "HomeSecurity-Proj:esp32wroom"
 			(at 179.07 81.28 0)
 			(effects
 				(font
@@ -2794,7 +2794,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "customespfootprint:ili9488"
+		(property "Footprint" "HomeSecurity-Proj:ili9488"
 			(at 153.67 138.43 0)
 			(effects
 				(font
@@ -2898,7 +2898,7 @@
 				)
 			)
 		)
-		(property "Footprint" "customespfootprint:esp32wroom"
+		(property "Footprint" "HomeSecurity-Proj:esp32wroom"
 			(at 105.41 81.28 0)
 			(effects
 				(font

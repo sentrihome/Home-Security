@@ -419,8 +419,13 @@
 	(zone
 		(net 0)
 		(net_name "")
-		(layers "F.Cu" "B.Cu")
-		(uuid "06b2dcf0-fcf5-49cc-b575-b97a3ba7eaae")
+		(layers "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu" "In5.Cu" "In6.Cu"
+			"In7.Cu" "In8.Cu" "In9.Cu" "In10.Cu" "In11.Cu" "In12.Cu" "In13.Cu" "In14.Cu"
+			"In15.Cu" "In16.Cu" "In17.Cu" "In18.Cu" "In19.Cu" "In20.Cu" "In21.Cu"
+			"In22.Cu" "In23.Cu" "In24.Cu" "In25.Cu" "In26.Cu" "In27.Cu" "In28.Cu"
+			"In29.Cu" "In30.Cu"
+		)
+		(uuid "70a86500-31ff-4e22-95c3-d8efe123bbbe")
 		(hatch edge 0.5)
 		(connect_pads
 			(clearance 0)
@@ -451,8 +456,13 @@
 	(zone
 		(net 0)
 		(net_name "")
-		(layers "F.Cu" "B.Cu")
-		(uuid "f95dfc94-aba0-4be7-910a-72908588df10")
+		(layers "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu" "In5.Cu" "In6.Cu"
+			"In7.Cu" "In8.Cu" "In9.Cu" "In10.Cu" "In11.Cu" "In12.Cu" "In13.Cu" "In14.Cu"
+			"In15.Cu" "In16.Cu" "In17.Cu" "In18.Cu" "In19.Cu" "In20.Cu" "In21.Cu"
+			"In22.Cu" "In23.Cu" "In24.Cu" "In25.Cu" "In26.Cu" "In27.Cu" "In28.Cu"
+			"In29.Cu" "In30.Cu"
+		)
+		(uuid "0ad019a1-55db-4679-b7f5-d8763ff55323")
 		(hatch edge 0.5)
 		(connect_pads
 			(clearance 0)
@@ -483,8 +493,13 @@
 	(zone
 		(net 0)
 		(net_name "")
-		(layers "F.Cu" "B.Cu")
-		(uuid "c37dcdd8-29a7-406e-92e6-80cfbb6a724b")
+		(layers "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu" "In5.Cu" "In6.Cu"
+			"In7.Cu" "In8.Cu" "In9.Cu" "In10.Cu" "In11.Cu" "In12.Cu" "In13.Cu" "In14.Cu"
+			"In15.Cu" "In16.Cu" "In17.Cu" "In18.Cu" "In19.Cu" "In20.Cu" "In21.Cu"
+			"In22.Cu" "In23.Cu" "In24.Cu" "In25.Cu" "In26.Cu" "In27.Cu" "In28.Cu"
+			"In29.Cu" "In30.Cu"
+		)
+		(uuid "f9154872-14de-4530-ab2e-c41cfbb8af39")
 		(hatch edge 0.5)
 		(connect_pads
 			(clearance 0)

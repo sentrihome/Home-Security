@@ -4,7 +4,7 @@
   "idf.openOcdConfigs": [
     "board/esp32-wrover-kit-3.3v.cfg"
   ],
-  "idf.port": "/dev/tty.usbserial-110",
+  "idf.port": "/dev/tty.usbserial-10",
   "idf.currentSetup": "/Users/anuragkoushik/.espressif/v5.5.2/esp-idf",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"

@@ -1,140 +1,152 @@
 # CLAUDE.md
 
-## IMPORTANT: Always Read All Files First
-
-**Before answering any question about this codebase, read every source file in `main/` and understand the full codebase.** Do not answer from partial context, assumptions, or references to files you haven't read. If a question requires understanding behavior, trace through the actual code — don't guess. If you haven't read a file yet, read it before making claims about it. This applies to bug reports, feature questions, architecture discussions, and code reviews.
-
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Debugging & Verification Discipline
+
+The local model backing this session (quantized, non-frontier) is prone to two failure patterns on precision-critical code — buffer offsets, index arithmetic, byte/bit-level parsing, pointer math, off-by-one conditions. Follow these rules when investigating bugs or verifying claims about correctness in this class of code:
+
+1. **No verdict before a full trace.** Before stating whether something is a bug, write out an explicit step-by-step trace — one row per index/offset/iteration — covering the entire relevant range, not a representative subset or a summary. If you catch yourself concluding without having listed every step, stop and produce the full trace first.
+
+2. **Re-derive, don't re-assert.** If asked to "check again," "verify," or "are you sure," do not simply flip your answer in response to the pushback itself. Redo the full trace from scratch as if you had never produced a prior answer, then explicitly compare the new trace's conclusion to the old one and state whether they agree and why.
+
+3. **Trace and verdict are separate steps.** Produce the full trace as its own complete output first. Only after the trace is finished, state the verdict as a distinct final step that references specific rows/steps from the trace above it — not a general impression of "this looks correct/incorrect."
+
+4. **Concrete example required, not abstract description.** Trace against a concrete example input with explicit values (actual byte contents, actual indices, actual pointer addresses) — never reason about the logic in the abstract without instantiating real data.
+
+5. **State uncertainty explicitly.** If the trace is inconclusive, or if you're not fully confident after tracing, say so directly rather than picking the more confident-sounding of two possible answers. "The trace shows X, but I'm not certain about edge case Y" is a better answer than a confident verdict that might be wrong.
 
 ## Project Overview
 
-Two co-located projects in one repo:
+ESP32-S3 firmware for a home security central console. The firmware runs on an ESP32-S3 with a 480x320 TFT LCD (ILI9488), SPI touch controller, UART1 for sensor communication, and WiFi station mode. It serves as the central control panel — users arm/disarm via touch gestures, and sensor data arrives over UART from external ESP32 sensor devices.
 
-1. **ESP32-S3 firmware** (`main/`) — Home security central console: 480×320 TFT touch display, UART sensor comms, WiFi station, HTTP API.
-2. **Next.js web app** (`plan/`) — Home Security panel UI (desktop mockup of the TFT display), built with Next.js 16 + shadcn/ui + Tailwind CSS v4.
+This is one of two ESP32 firmware projects in the repo. See the sibling `centralconsole_ap/` (the WROOM sensor AP firmware). For cross-project architecture, credential flows, and protocol specs, read the root-level [DOCUMENTATION.md](../../DOCUMENTATION.md) and [todo.md](../../todo.md).
 
-## Build & Run
-
-### ESP Firmware
+## Build & Flash
 
 ```bash
-# Set target and build
+# Set target (one-time)
 idf.py set-target esp32s3
+
+# Build
 idf.py build
 
-# Flash (adjust COM port)
-idf.py -p /dev/ttyUSB0 flash
+# Flash (adjust port)
+idf.py -p /dev/tty.usbmodem1101 flash
 
-# Monitor serial output
-idf.py -p /dev/ttyUSB0 monitor
+# Monitor
+idf.py -p /dev/tty.usbmodem1101 monitor
 ```
 
-Uses minimal build (`idf_build_set_property(MINIMAL_BUILD ON)`) to keep binary size small. Partition layout: 6KB NVS + 4KB phy + 2M factory app (`partitions.csv`).
+### Key Build Settings
 
-### Next.js Web App
+| Setting | Value |
+|---|---|
+| Framework | ESP-IDF v5.5.2 + Arduino-ESP32 v3.3.6 |
+| Flash | 8MB (`partitions.csv`: factory = 0x1F0000) |
+| Minimal build | ON (trim binary size) |
+| Target | ESP32-S3 |
 
-```bash
-cd plan
-npm install          # if dependencies not installed
-npm run dev          # dev server
-npm run build        # production build
-npm run lint         # ESLint
-```
+The `CMakeLists.txt` uses `idf_build_set_property(MINIMAL_BUILD ON)` and wraps `esp_log_write` for binary size reduction.
+
+### Dependencies
+
+Managed via `main/idf_component.yml`:
+- `espressif/arduino-esp32` ==3.3.6
+- `espressif/cjson` ^1.7.19~2
+- TFT_eSPI (local component under `components/TFT_eSPI/`)
+- Plus ~30 managed components (libsodium, rmaker_common, esp_diagnostics, mdns, etc.)
 
 ## Architecture
 
-### ESP Firmware (`main/`)
-
-Single endless loop — no RTOS tasks, no FreeRTOS:
+### Entry Point (`main/main.cpp`)
 
 ```
 app_main()
-  ├── initArduino()          — Arduino ESP32 compat layer
-  ├── Serial.begin(115200)   — debug output
-  ├── storage.init()         — NVS init + open namespace "app"
-  ├── wifi_init()            — WiFi driver + event loop (no connect yet)
-  ├── wifi_start(ssid, pass) — connect if creds exist in NVS
-  ├── uart.init()            — UART1 at 230,120 baud, odd parity
+  ├── initArduino()
+  ├── Serial.begin(115200)
+  ├── storage.init()           — NVS init (nvs_flash)
+  ├── wifi_init()              — ESP-IDF WiFi event loop setup
+  ├── wifi_start(ssid, pass)   — push creds from NVS, start station
   └── while(true):
-      ├── display.init()     — one-shot: boot splash → idle screen
-      ├── display.process()  — read touch → toggle armed/unarmed
-      └── pair.receive()     — poll UART1 for sensor data
+      ├── display.init()       — one-shot: boot splash → idle screen
+      ├── display.process()    — read touch → toggle armed/unarmed
+      └── pair.receive()       — poll UART1 for sensor data
 ```
 
-### Web App (`plan/`)
+### Module Map
 
-Next.js 16 app-router project with shadcn/ui component library. The main page ([plan/app/page.tsx](plan/app/page.tsx)) is a pixel-accurate mockup of the TFT display (480×320) with armed/disarmed state, motion detection toggle, and settings navigation. Also includes [plan/scripts/home_security_ui.ino](plan/scripts/home_security_ui.ino) — a more complete Arduino UI design with bitmap icons, rounded cards, switch controls, and a planned settings page.
+| Module | Files | Purpose |
+|---|---|---|
+| **Display** | `display.h/.cpp` | TFT init (TFT_eSPI), armed/unarmed UI state machine, touch gesture reading |
+| **Touch** | (in `display.cpp`) | `Touch::read()` — raw SPI touch coordinates |
+| **WiFi** | `connectivity.h/.cpp` | ESP-IDF `esp_wifi`/`esp_event` init, auto-reconnect handler |
+| **UART** | `app_uart.h/.cpp` | UART1 driver, frame parsing (SYNC|CMD|LEN|PAYLOAD|CRC), command dispatch |
+| **Storage** | `storage.h/.cpp` | NVS wrapper — `store(key, value)`, `read(key)` |
+| **JSON** | `jsonhandler.h/.cpp` | cJSON wrapper — `jsonparser(json_str, key)` |
+| **UI Assets** | `uielements.h/.c` | RGB565 sprite bitmaps (idle, armed, disarmed states) |
+| **Logging** | `core.h/.cpp` | Shared `log()` helper with timestamped Serial output |
 
-### Cross-Project Architecture
+### Key Wiring
 
-The web app (`plan/`) is a **design mockup / reference implementation** of what the TFT display should look like. The firmware's current UI ([main/display.cpp](main/display.cpp)) uses pre-flashed 16-bit BMP sprites for armed/disarmed states, while the web app uses Tailwind + Lucide icons as the target aesthetic. The Arduino sketch in [plan/scripts/home_security_ui.ino](plan/scripts/home_security_ui.ino) bridges the two — it's a full TFT_eSPI sketch implementing the planned UI with drawn primitives and bitmap icons.
-
-### Module Map (`main/`)
-
-| Files | Purpose |
-|---|---|
-| `main.cpp` | Entry point and main loop — wires all subsystems together |
-| `core.h/.cpp` | Shared `log()` helper printing timestamped messages to Serial |
-| `storage.h/.cpp` | NVS storage wrapper — `init()` opens namespace "app", `store()` writes strings, `read()` reads strings (up to 63 bytes) |
-| `display.h/.cpp` + `uielements.h` | TFT init (TFT_eSPI), armed/unarmed UI state machine, touch gesture reading |
-| `uielements.c` | UI sprite assets — **1.9 MB blob** of raw RGB565 pixel arrays (502 lines). Do not edit manually; regenerate from PNG mockups if needed. |
-| `connectivity.h/.cpp` | WiFi station init using ESP-IDF `esp_wifi`/`esp_event`. `wifi_init()` sets up event loop; `wifi_start(ssid, pass)` configures and connects. Auto-reconnects on disconnect. |
-| `app_uart.h/.cpp` | UART1 driver (`uart_s`) + frame parser/builder (`pair_s`). TX=GPIO18, RX=GPIO17 (swapped for straight-through physical wiring), RTS=4, CTS=5, 230120 baud, odd parity. Frame format: `SYNC(2B: "c8") | CMD(1B) | LEN(2B) | PAYLOAD | CRC(2B)`. CRC = `cmd + 2*length`. Only command: `MOBILE_PAIRING` — extracts JSON fields, stores creds in NVS, triggers WiFi reconnection. |
-| `jsonhandler.h/.cpp` | cJSON wrapper — `jsonparser(json_str, key)` returns string value for a key, or "" if not found |
-
-**Note:** HTTP endpoints (`httpendpoints.h/.cpp`) are mentioned in documentation but do not exist in this project. They are not in `CMakeLists.txt` and no source files exist.
-
-### Wiring Summary
-
-- **TFT + Touch share SPI bus** on GPIO11/12/13; separate CS: TFT=GPIO10, Touch=GPIO8
-- **Touch gesture area (ARM/DISARM button):** x: 1982–2432, y: 350–803
-- **UART1:** TX=GPIO18, RX=GPIO17 (swapped — physical connector is wired straight-through, pin 1 to pin 1), RTS=4, CTS=5, 230120 baud, odd parity (both ends use odd parity)
-- **TFT-specific pins:** DC=GPIO9, RST=GPIO14, BL=GPIO15
+- **TFT + Touch share SPI bus** (GPIO11/12/13); CS: TFT=GPIO10, Touch=GPIO8
+- **Touch gesture area (ARM/DISARM):** x: 1982–2432, y: 350–803 (raw panel coordinates)
+- **UART1:** TX=17, RX=18, RTS=4, CTS=5 — receives sensor data at 230120 baud, odd parity
+- **TFT pins:** DC=GPIO9, RST=GPIO14, BL=GPIO15
 - **Touch PEN (IRQ):** GPIO7
+- **Note:** UART TX/RX pins are swapped (`uart_set_pin(1, 18, 17, ...)`) — intentional for straight-through connector wiring
 
-### Global State
+### UART Frame Protocol
 
-Several globals are shared across modules without synchronization:
-- `app_wifi_station_start` (in [display.cpp:10](main/display.cpp:10)) — set by WiFi event handler, read by Display::init()
-- `display_wifi_station_start`, `init_done`, `startup_phase_1/2` — display boot-phase flags
-- `motionArmed` (in [plan/scripts/home_security_ui.ino](plan/scripts/home_security_ui.ino:169)) — web app UI state
+```
+SYNC(2B: 'c','8') | CMD(1B) | LEN(2B big-endian) | PAYLOAD | CRC(2B big-endian)
+```
+
+CRC validation: `cmd_byte + 2 * payload_length == crc_received`
+
+Current commands (`cmd_s` enum):
+- `MOBILE_PAIRING` — receives JSON with WiFi creds, stores in NVS, triggers WiFi reconnection, sends acknowledgment
 
 ## IDE Configuration
 
-VSCode settings ([.vscode/settings.json](.vscode/settings.json)) are pre-configured for ESP-IDF development:
-- `idf.currentSetup`: ESP-IDF v5.5.2 at `~/.espressif/v5.5.2/esp-idf`
-- `IDF_TARGET`: esp32s3
-- `clangd.path`: ESP clang 19.1.2
-- `idf.port`: `/dev/tty.usbmodem101`
-- `idf.openOcdConfigs`: `board/esp32s3-builtin.cfg`
+- **VSCode settings:** `.vscode/settings.json` — ESP-IDF v5.5.2, target esp32s3, port `/dev/tty.usbmodem1101`
+- **clangd:** Uses Espressif's esp-clang 19.1.2, compile commands from `build/`
+- **DevContainer:** Available (`.devcontainer/`) for ESP-IDF QEMU environment
+- **.clangd:** Strips architecture flags (`-f*`, `-m*`)
 
-C++ IntelliSense ([.vscode/c_cpp_properties.json](.vscode/c_cpp_properties.json)) uses the ESP-IDF compiler path and compile_commands.json from the build directory.
+## Plan Directory (`plan/`)
 
-## General Instructions
+A Next.js 16 + shadcn/ui (New York style) project for TFT display mockups/UI design. Not part of the firmware build.
 
-- **Always make the minimal changes needed.** Do not refactor, rename, or reformat code unless explicitly asked. Only touch the specific lines that address the issue at hand.
+```bash
+cd plan
+npm install
+npm run dev    # start dev server
+npm run build  # production build
+npm run lint   # ESLint
+```
 
-## Coding Conventions Observed
+Config: Tailwind CSS v4, TypeScript strict mode, RSC enabled, Lucide icons, Vercel Analytics. Built for unoptimized Image rendering (ESP32 target preview).
 
-- All modules are plain C++ with `extern "C"` only for `app_main()` (ESP-IDF requirement)
-- No headers guard (`#pragma once`) on `.cpp` files — only `.h` files use it
-- Buffers that hold strings: **always leave room for null terminator** when using fixed-size arrays
-- Touch coordinates are hardcoded pixel ranges from the specific display unit used during development (not calibrated at runtime)
-- Uses ESP-IDF HTTPD server (`esp_http_server`) — handlers return `esp_err_t` and use `httpd_req_recv`/`httpd_resp_sendstr` etc.
-- UART config uses 230,120 baud. **Do not change without confirming against the external device protocol spec.**
+## Known Issues
 
-## Notable Current Limitations & Bugs
+1. **UART TX/RX swapped** — `uart_set_pin(UART_NUM_1, 18, 17, ...)` is intentional for current hardware but will break if connector wiring changes.
+2. **Parity** — `UART_PARITY_ODD` is set; both ends must use odd parity.
+3. **No UART TX path in `uart_s::init()`** — only RX is configured; TX is used only via `pair_s::send()` which calls `uart_write_bytes` directly.
+4. **No FreeRTOS event queue for UART** — `uart_driver_install` passes `queue_size=0, uart_queue=NULL`; `pair.receive()` is synchronous poll only.
+5. **SETTINGS page** — defined in `Display::Page` enum but unimplemented.
+6. **WiFi credential buffer** — `memcpy` uses `size() + 1` (32-byte SSID → 33 bytes copied, 64-byte password → 65 bytes). Safe in practice since IEEE 802.11 caps SSIDs at 32 and WPA2 at 64.
 
-- **UART TX/RX swapped** (`app_uart.cpp:32`) — intentional: physical connector is wired straight-through (pin 1 to pin 1). Do not "fix" this.
-- **Parity set to `UART_PARITY_ODD`** (`app_uart.cpp:26`) — intentional: both UART ends use odd parity.
-- **Touch uses `getTouchRaw()`** (`display.cpp:76`) — reads raw ADC noise when not touched. The proper method `getTouch()` checks pressure. This can cause spurious armed/disarmed toggles.
-- **Touch debounce** (`display.cpp:95`) — `delay(80)` after toggle helps, but no state tracking for "is touch currently pressed". A sustained press could toggle multiple times.
-- **Touch coordinates are panel-specific** — fixed pixel ranges won't calibrate across different display units.
-- **No UART TX API** — `uart_s::init()` exists but `pair_s::send()` uses `uart_write_bytes` directly on `UART_NUM_1`. The TX path works but isn't part of a public API.
-- **No event queue for UART** — synchronous poll only, `uart_read_bytes()` blocks up to 100ms. During this time, display and touch are not processed.
-- **`pair.receive()` return value ignored** in main loop — caller doesn't know if data was actually processed.
-- **`storage_s::read()` uses fixed 64-byte buffer** — if a stored value exceeds 63 bytes + null, `nvs_get_str` returns `ESP_ERR_NVS_INVALID_LENGTH` and the function returns empty string.
-- **`wifi_start()` called unconditionally at boot** — if NVS has no credentials, `wifi_start("")` runs and tries to connect to an empty SSID. The device won't be useful without WiFi anyway.
-- **NVS errors logged via printf** — `storage.cpp` now checks all NVS return values. On failure, errors are printed but no recovery logic exists beyond the initial `nvs_flash_erase()` retry in `init()`.
-- **CRC validation** — uses `cmd + 2*length` as a simple checksum. `cmd_rec` is now `uint8_t` (was `char`), so all command values 0x00–0xFF work correctly.
-- **uielements.c is a 1.9 MB blob** — raw RGB565 pixel data; use PNG mockups in `UI Mockups/` or the web app in `plan/` as reference for UI changes.
+## Testing
+
+- `pytest_hello_world.py` — ESP-IDF pytest template (QEMU/host tests). Not wired for this project yet; the firmware doesn't print "Hello world!".
+- No automated tests currently exist for the firmware modules.
+- Manual testing: flash → monitor serial output → touch ARM/DISARM area → verify state toggle → send UART frames from sensor device.
+
+## Development Tips
+
+- **sdkconfig is gitignored** — if you reset menuconfig, re-apply TFT pins, flash size, and touch settings. The TFT_eSPI library reads pin config from sdkconfig (Kconfig), not `User_Setup.h`.
+- **UI bitmaps** — `uielements.c` is a large RGB565 blob. Do not edit manually; regenerate from PNG mockups in `UI Mockups/` or the web mockup in `plan/`.
+- **NVS keys** — current keys: `"ssid"`, `"pass"`. New credentials should follow this naming convention.
+- **WiFi auto-reconnect** — built into `wifi_event_handler`; on `WIFI_EVENT_STA_DISCONNECTED`, it calls `esp_wifi_connect()`.
+- **`wait_for_wifi_to_connect` queue** — used by `pair.receive()` to wait for WiFi connection after receiving pairing data.
