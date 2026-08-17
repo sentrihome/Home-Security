@@ -2,6 +2,7 @@
 #include "connectivity.h"
 #include "app_uart.h"
 #include "storage.h"
+#include "keypad.h"
 
 // void setup(){
 //   Serial.begin(115200);

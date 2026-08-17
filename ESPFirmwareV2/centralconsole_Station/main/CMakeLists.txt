@@ -1,4 +1,4 @@
-idf_component_register(SRCS "core.cpp" "jsonhandler.cpp" "app_uart.cpp" "connectivity_esp.cpp" "main.cpp"
+idf_component_register(SRCS "keypad.cpp" "core.cpp" "jsonhandler.cpp" "app_uart.cpp" "connectivity_esp.cpp" "main.cpp"
                             "storage.cpp"
                             "display.cpp"
                             "uielements.c"

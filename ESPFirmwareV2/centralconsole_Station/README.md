@@ -53,6 +53,19 @@ An ESP32-S3 firmware serving as the central control console for a home security 
 - BL (GPIO15) controls the display backlight (can often be tied to 3.3V or PWM-controlled for brightness).
 - PEN (GPIO7) is the touch controller's interrupt/pen-down signal, used to detect touch events without polling.
 
+### 4x4 Keypad
+
+| Keypad Pin | Function   | GPIO  |
+|------------|------------|-------|
+| R1         | Row 1      | GPIO42|
+| R2         | Row 2      | GPIO41|
+| R3         | Row 3      | GPIO40|
+| R4         | Row 4      | GPIO39|
+| C1         | Column 1   | GPIO38|
+| C2         | Column 2   | GPIO37|
+| C3         | Column 3   | GPIO36|
+| C4         | Column 4   | GPIO35|
+
 ### Pin Summary (by GPIO)
 
 | GPIO   | Connected To            |
@@ -70,6 +83,14 @@ An ESP32-S3 firmware serving as the central control console for a home security 
 | GPIO15 | TFT BL                  |
 | GPIO17 | UART TX                 |
 | GPIO18 | UART RX                 |
+| GPIO35 | Keypad C4 (Column 4)    |
+| GPIO36 | Keypad C3 (Column 3)    |
+| GPIO37 | Keypad C2 (Column 2)    |
+| GPIO38 | Keypad C1 (Column 1)    |
+| GPIO39 | Keypad R4 (Row 4)       |
+| GPIO40 | Keypad R3 (Row 3)       |
+| GPIO41 | Keypad R2 (Row 2)       |
+| GPIO42 | Keypad R1 (Row 1)       |
 
 ## Firmware Structure
 
