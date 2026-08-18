@@ -15,7 +15,12 @@ import { useSetupWizard, type WizardStep } from '@/context/SetupWizardContext';
 import { cloudApi, piApi } from '@/lib/api';
 import { DEFAULT_PI_HOST, PI_SOFTAP_BASE_URL } from '@/lib/config';
 import * as esp from '@/lib/esp';
-import { fetchGoogleEmail, useGoogleDriveAuth } from '@/lib/googleAuth';
+import {
+  formatGoogleSignInError,
+  isGoogleSignInReady,
+  signInWithGoogle,
+  signOutGoogle,
+} from '@/lib/googleAuth';
 import {
   PERMANENT_PASS_ALLOWED,
   PERMANENT_PASS_LENGTH,
@@ -88,9 +93,9 @@ export default function SetupScreen() {
   const [debugStatus, setDebugStatus] = useState('');
   const [debugBusy, setDebugBusy] = useState(false);
 
-  const { response, promptAsync, ready } = useGoogleDriveAuth();
   const [googleBusy, setGoogleBusy] = useState(false);
   const [googleStatus, setGoogleStatus] = useState('');
+  const googleReady = isGoogleSignInReady();
 
   useEffect(() => {
     if (currentStep > 0) setPiSetupDone(true);
@@ -107,41 +112,25 @@ export default function SetupScreen() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (response?.type !== 'success') return;
-
-    const accessToken = response.authentication?.accessToken;
-    const refreshToken = response.authentication?.refreshToken;
-
-    if (!accessToken || !refreshToken) {
-      setGoogleStatus(
-        'No refresh token from Google. Revoke app access at myaccount.google.com/permissions and sign in again.'
-      );
-      return;
+  async function handleGoogleSignIn() {
+    setGoogleBusy(true);
+    setGoogleStatus('');
+    try {
+      const { accessToken, refreshToken, email } = await signInWithGoogle();
+      await signIn({ token: accessToken, refreshToken, email });
+      setGoogleStatus(`Signed in as ${email}`);
+    } catch (e) {
+      setGoogleStatus(formatGoogleSignInError(e));
+    } finally {
+      setGoogleBusy(false);
     }
+  }
 
-    let cancelled = false;
-    (async () => {
-      setGoogleBusy(true);
-      setGoogleStatus('');
-      try {
-        const email = await fetchGoogleEmail(accessToken);
-        if (cancelled) return;
-        await signIn({ token: accessToken, refreshToken, email });
-        setGoogleStatus(`Signed in as ${email}`);
-      } catch (e) {
-        if (!cancelled) {
-          setGoogleStatus(e instanceof Error ? e.message : 'Google sign-in failed');
-        }
-      } finally {
-        if (!cancelled) setGoogleBusy(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [response, signIn]);
+  async function handleGoogleSignOut() {
+    await signOutGoogle();
+    await signOut();
+    setGoogleStatus('');
+  }
 
   /** Health-check Pi, POST Drive refresh token, then advance wizard. */
   async function handoffToPi(host: string) {
@@ -493,7 +482,11 @@ export default function SetupScreen() {
         {isLoggedIn ? (
           <>
             <Text style={styles.hint}>Signed in as {session?.email}</Text>
-            <PrimaryButton label="Sign out" variant="secondary" onPress={() => signOut()} />
+            <PrimaryButton
+              label="Sign out"
+              variant="secondary"
+              onPress={() => handleGoogleSignOut()}
+            />
           </>
         ) : (
           <>
@@ -503,8 +496,8 @@ export default function SetupScreen() {
             <PrimaryButton
               label="Sign in with Google"
               loading={googleBusy}
-              disabled={!ready}
-              onPress={() => promptAsync()}
+              disabled={!googleReady}
+              onPress={handleGoogleSignIn}
             />
           </>
         )}
