@@ -1,1 +1,4 @@
 flask>=3.0,<4
+# Object detection on the shared MediaMTX feed (pi_hub/detect.py).
+# headless: no GUI/Qt bindings — the Pi never draws a window.
+opencv-python-headless>=4.8,<5

@@ -1,0 +1,24 @@
+# Lab / product config — MediaMTX fan-out for live WebRTC + clip RTSP reads.
+# Auth off — lab / home Tailscale only; add auth before wider exposure.
+
+logLevel: info
+
+rtsp: true
+rtspAddress: :8554
+
+webrtc: true
+webrtcAddress: :8889
+webrtcAllowOrigins: ["*"]
+webrtcIPsFromInterfaces: true
+webrtcAdditionalHosts:
+  - 192.168.0.236
+  - 100.66.51.106
+  - mypi
+
+pathDefaults:
+  source: publisher
+
+paths:
+  all_others:
+  cam:
+    source: publisher

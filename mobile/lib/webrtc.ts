@@ -28,8 +28,17 @@ export function resolveWebrtcPlayUrl(
 
   try {
     const host = new URL(piBaseUrl).hostname.toLowerCase();
+    const isTailscale =
+      host.startsWith('100.') || host === 'mypi' || host.endsWith('.ts.net');
+
     if (urls) {
-      const candidates = [urls.lan, urls.tailscale_ip, urls.tailscale_host, start?.webrtc_url];
+      // Explicit match first
+      const candidates = [
+        urls.lan,
+        urls.tailscale_ip,
+        urls.tailscale_host,
+        start?.webrtc_url,
+      ];
       for (const candidate of candidates) {
         if (!candidate) continue;
         try {
@@ -39,6 +48,12 @@ export function resolveWebrtcPlayUrl(
         } catch {
           /* ignore bad URL */
         }
+      }
+
+      // Phone on Tailscale: prefer hub's Tailscale play URLs
+      if (isTailscale) {
+        if (urls.tailscale_ip) return urls.tailscale_ip;
+        if (urls.tailscale_host) return urls.tailscale_host;
       }
     }
   } catch {

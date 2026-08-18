@@ -34,6 +34,43 @@ WEBRTC_PORT = 8889
 CLIP_DURATION_SEC = 10.0
 HLS_PLAYLIST_NAME = "index.m3u8"  # legacy; live now prefers WebRTC
 
+# ── Object detection (OpenCV DNN, MobileNet-SSD) ─────────────────────────────
+# Reads the shared MediaMTX RTSP feed — never VIDEO_DEVICE, which camera.py owns.
+MODEL_DIR = DATA_DIR / "models"
+DETECT_PROTOTXT = MODEL_DIR / "MobileNetSSD_deploy.prototxt"
+DETECT_MODEL = MODEL_DIR / "MobileNetSSD_deploy.caffemodel"
+
+# VOC class order baked into the MobileNet-SSD weights — index matters.
+DETECT_CLASSES = (
+    "background", "aeroplane", "bicycle", "bird", "boat",
+    "bottle", "bus", "car", "cat", "chair",
+    "cow", "diningtable", "dog", "horse", "motorbike",
+    "person", "pottedplant", "sheep", "sofa", "train",
+    "tvmonitor",
+)
+
+# Only these labels raise an event. A cat at 3am should not wake anyone.
+DETECT_TARGET_LABELS = ("person",)
+DETECT_MIN_CONFIDENCE = 0.55
+DETECT_INPUT_SIZE = 300  # MobileNet-SSD is trained at 300x300
+
+# Sample rate, not frame rate. Frames are drained continuously so the RTSP
+# buffer stays fresh; inference runs at most once per interval.
+DETECT_INTERVAL_SEC = 1.0
+
+# After an event, ignore further detections for this long (matches the app's
+# 30s acknowledge cooldown so one intruder is not twenty notifications).
+DETECT_COOLDOWN_SEC = 30.0
+
+# Bounded retry: reconnect to RTSP with backoff, then stop and report instead
+# of spinning forever (architecture §8 — no infinite retry loops).
+DETECT_MAX_READ_FAILURES = 5
+DETECT_RECONNECT_BACKOFF_SEC = 2.0
+DETECT_RECONNECT_BACKOFF_MAX_SEC = 30.0
+
+# Start the detector automatically when the hub boots (if weights are present).
+DETECT_AUTOSTART = True
+
 
 def webrtc_play_url(host: str | None = None) -> str:
     """Browser URL for MediaMTX built-in WebRTC player."""

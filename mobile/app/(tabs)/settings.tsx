@@ -89,13 +89,13 @@ export default function SettingsScreen() {
       <View style={styles.card}>
         <Text style={styles.section}>Pi host / IP</Text>
         <Text style={styles.hint}>
-          Static LAN address of the Raspberry Pi (port 4000). Saved from SoftAP setup or
-          edit manually here.
+          Tailscale IP (recommended) or LAN IP of the Pi. API uses port 4000; live video uses
+          port 8889 on the same host.
         </Text>
         <TextInput
           value={piHostDraft}
           onChangeText={setPiHostDraft}
-          placeholder="192.168.0.236"
+          placeholder="100.66.51.106"
           autoCapitalize="none"
           autoCorrect={false}
           style={styles.input}

@@ -118,7 +118,14 @@ sudo ./install-pi-setup.sh
 sudo reboot
 ```
 
-**API endpoints:** `GET /status`, `GET /scan`, `POST /wifi`, `POST /start`, `POST /stop`, `POST /motion`
+**API endpoints:** `GET /status`, `GET /scan`, `POST /wifi`, `POST /start`, `POST /stop`, `POST /motion`,
+`POST /detect/start`, `POST /detect/stop`, `GET /detect/status`
+
+**Object detection:** `pi_hub/detect.py` runs MobileNet-SSD via OpenCV DNN against the shared
+MediaMTX RTSP feed (never `/dev/video0` — `camera.py` owns that) and raises person-gated events
+through `pi_hub/events.py`, the same pipeline `POST /motion` uses. Weights are fetched by
+`scripts/fetch-detection-model.sh` with sha256 verification, not committed. Decision logic is
+unit tested: `cd rasberry-pi-setup && python3 -m unittest discover -s tests`.
 
 Pi runs at static IP `192.168.0.236` after provisioning. First-boot SoftAP: `HomeSecurity-Setup` at `10.42.0.1`.
 

@@ -181,7 +181,11 @@ Can run in parallel with software phases once Phase 1 step 3's credential deriva
 Don't let these creep into v1 scope:
 
 - Bluetooth speaker pairing as a local siren
-- Camera-based motion detection
+- ~~Camera-based motion detection~~ — **shipped early**, ahead of this roadmap:
+  `pi_hub.detect` runs MobileNet-SSD over OpenCV DNN on the shared MediaMTX RTSP
+  feed and raises person-gated events through `pi_hub.events`. It does not replace
+  the PIR sensor path (§19) — the two are independent triggers into the same clip
+  pipeline. See `rasberry-pi-setup/PI-SOFTAP-README.md`.
 - Partial/zone arming ("stay" vs. "away" modes)
 - Auto-arm/auto-disarm via schedule or geofencing
 - OTA update mechanism (§22 #7 — needed before wide field deployment, but not for a first working unit)

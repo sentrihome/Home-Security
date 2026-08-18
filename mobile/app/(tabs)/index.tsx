@@ -85,7 +85,11 @@ export default function LiveScreen() {
       ) : (
         <View style={styles.placeholder}>
           <Text style={styles.placeholderText}>
-            {busy ? 'Connecting…' : 'Stream not active'}
+            {busy
+              ? 'Connecting…'
+              : status.startsWith('Start failed')
+                ? 'Could not start — see error below'
+                : 'Stream not active'}
           </Text>
         </View>
       )}

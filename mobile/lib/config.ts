@@ -13,8 +13,11 @@ import { Platform } from 'react-native';
 
 const localhost = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 
-/** Known static Pi LAN address after SoftAP provisioning. */
-export const DEFAULT_PI_HOST = '192.168.0.236';
+/** Prefer Tailscale so Live works off home Wi‑Fi; LAN still works if set in Settings. */
+export const DEFAULT_PI_HOST = '100.66.51.106';
+
+/** Static Pi LAN address after SoftAP provisioning (optional Settings override). */
+export const PI_LAN_HOST = '192.168.0.236';
 
 /** SoftAP gateway while the phone is on HomeSecurity-Setup. */
 export const PI_SOFTAP_BASE_URL = 'http://10.42.0.1:4000';

@@ -13,7 +13,7 @@
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "Used to pair your home-security ESP32 device on your local Wi-Fi.",
         "NSAppTransportSecurity": {
-          "NSAllowsLocalNetworking": true
+          "NSAllowsArbitraryLoads": true
         }
       }
     },

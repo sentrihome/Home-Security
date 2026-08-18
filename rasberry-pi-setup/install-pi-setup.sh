@@ -33,8 +33,19 @@ echo "Copying pi_hub package..."
 rm -rf "$PI_HOME/pi_hub"
 cp -a "$SCRIPT_DIR/pi_hub" "$PI_HOME/pi_hub"
 chown -R koushik:koushik "$PI_HOME/pi_hub"
-mkdir -p "$PI_HOME/homesecurity/hls" "$PI_HOME/homesecurity/clips" "$PI_HOME/homesecurity/logs"
+mkdir -p "$PI_HOME/homesecurity/hls" "$PI_HOME/homesecurity/clips" \
+         "$PI_HOME/homesecurity/logs" "$PI_HOME/homesecurity/models"
 chown -R koushik:koushik "$PI_HOME/homesecurity"
+
+echo "Fetching object detection model (MobileNet-SSD)..."
+if [ -x "$SCRIPT_DIR/scripts/fetch-detection-model.sh" ]; then
+    "$SCRIPT_DIR/scripts/fetch-detection-model.sh" "$PI_HOME/homesecurity/models" \
+        || echo "NOTE: model fetch failed (offline?) — detection stays off until you run
+      scripts/fetch-detection-model.sh manually. The hub runs fine without it."
+elif [ -f "$SCRIPT_DIR/scripts/fetch-detection-model.sh" ]; then
+    bash "$SCRIPT_DIR/scripts/fetch-detection-model.sh" "$PI_HOME/homesecurity/models" \
+        || echo "NOTE: model fetch failed — run it manually later."
+fi
 
 echo "Installing MediaMTX config + unit (shared camera fan-out)..."
 mkdir -p /etc/mediamtx
@@ -126,6 +137,7 @@ echo ""
 echo "Boot rule:"
 echo "  unconfigured → SoftAP + setup API :4000"
 echo "  home Wi‑Fi   → pi-hub :4000 (GET /health, /start, /stop, /motion, /auth/drive)"
+echo "                 detection: /detect/start, /detect/stop, /detect/status"
 echo ""
 echo "Next steps:"
 echo "  1. Reboot: sudo reboot"

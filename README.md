@@ -100,11 +100,11 @@ flowchart TB
 |---|---|---|---|
 | ESP32-S3 | Central console | Station (home WiFi) | Display, keypad (PIN entry for disarm — see §20), stores home WiFi creds, stores sensor keys, **stores the disarm PIN in NVS**, relays credentials/status to console WROOM over UART. Motion/event relay toward Pi confirmed required — see §16, §20. |
 | ESP32-WROOM (console-side) | Sensor hub / pairing surface | Access Point (persistent, "HomeSecurity" network) | Hosts sensor network, relays sensor data to S3 via UART, validates sensor auth (`sensor_key`), generates pairing credentials and the sensor-network PSK |
-| ESP32-WROOM (sensor units) | Sensors | Station → connects to console WROOM's AP | Motion/door/etc. detection, sends events authenticated with `sensor_key`. Currently the system's only motion-alert trigger — see §19. |
-| Raspberry Pi | Setup relay, PSK backup, product hub | AP (setup only) → Station (post-setup, static IP `192.168.0.236`) | **Initializes first, before console provisioning — see §4, §13.** Runs its own SoftAP setup wizard; serves `GET /health`; owns the system's camera (currently monitoring/live-view only, no motion detection — see §19) and sends motion alerts via FCM (Android) / ntfy.sh (iOS); serves on-demand HLS live over Tailscale; caches clips locally and uploads to the user's Google Drive; stores a backup copy of the sensor-network PSK (pending §16) |
+| ESP32-WROOM (sensor units) | Sensors | Station → connects to console WROOM's AP | Motion/door/etc. detection, sends events authenticated with `sensor_key`. One of two motion-alert triggers, alongside the Pi's camera detector — see §19. |
+| Raspberry Pi | Setup relay, PSK backup, product hub | AP (setup only) → Station (post-setup, static IP `192.168.0.236`) | **Initializes first, before console provisioning — see §4, §13.** Runs its own SoftAP setup wizard; serves `GET /health`; owns the system's camera and runs OpenCV person detection on its feed as an independent alert trigger (§19) and sends motion alerts via FCM (Android) / ntfy.sh (iOS); serves on-demand HLS live over Tailscale; caches clips locally and uploads to the user's Google Drive; stores a backup copy of the sensor-network PSK (pending §16) |
 | Mobile App (React Native, `mobile/`) | Orchestrator / client | N/A | Walks the user through both the Pi setup flow and the console/sensor provisioning flow, holds home WiFi creds in memory only during setup, stores the sensor-network PSK for future pairing, saves the Pi host, registers for push (FCM/ntfy), handles Google OAuth and hands the refresh token to the Pi, plays live (via Tailscale) and clips (via Drive) |
 
-**Confirmed: no camera on any ESP32.** The camera is Pi-attached only, and is monitoring/live-view only for now — camera-based motion detection is a planned post-launch feature, not part of this design. See §19.
+**Confirmed: no camera on any ESP32.** The camera is Pi-attached only. It is no longer monitoring-only: the Pi runs OpenCV person detection on the camera feed as a second, independent motion-alert trigger alongside the ESP32 sensor network. See §19.
 
 **Confirmed: the console has a physical keypad**, used for PIN entry on disarm (§20). **The PIN itself is stored in S3 NVS**, not on the Pi — this creates a flagged tension with the Pi-as-state-authority decision, see §20. **No local audio/siren hardware is planned for initial release** — the console is display + keypad only; Bluetooth speaker support (as a post-launch siren option) is roadmap, not v1.
 
@@ -477,17 +477,34 @@ This is the same "phone-mediated secret handoff to a persistent device" pattern 
 
 **Confirmed: no ESP32 (S3 or WROOM) has a camera.** The camera is Pi-attached only, matching the product-layer diagram's `Camera → Pi` line directly.
 
-**Confirmed: for the initial release, the camera is monitoring/live-view only — it does not perform motion detection.** The ESP32 sensor network (door/PIR-type WROOM sensors) is currently the system's **only** motion-alert trigger. Camera-based motion detection is a planned feature for a future release, not part of this design.
+**Superseded: camera-based detection has shipped, ahead of the roadmap.** This section
+previously stated the camera was monitoring/live-view only and that the ESP32 sensor network
+was the system's **only** motion-alert trigger. That is no longer accurate. The Pi now runs
+person detection on the camera feed (`rasberry-pi-setup/pi_hub/detect.py`: MobileNet-SSD via
+OpenCV's DNN module, reading the shared MediaMTX RTSP path).
 
-This means the full motion-alert data flow is now:
+There are therefore **two independent triggers** into one clip/alert pipeline:
 
 ```
-Sensor (WROOM) → Console WROOM (WiFi, sensor_key auth) → Console S3 (UART) → Pi (§16 link) → Notification System (FCM/ntfy)
+A) Sensor (WROOM) → Console WROOM (WiFi, sensor_key auth) → Console S3 (UART) → Pi (§16 link) ┐
+                                                                                              ├→ clip + Drive upload → Notification (FCM/ntfy)
+B) Camera → MediaMTX (RTSP) → Pi OpenCV detector (person-gated) ───────────────────────────────┘
 ```
 
-This confirms §16 (Pi↔S3 link) as required for alerting, not just PSK backup — its latency budget (≤15s end-to-end, §14) applies to this full chain. See §20 for how this pipeline also intersects with local console feedback on an armed-state trigger.
+Both converge on `pi_hub.events.handle_motion()`, so a camera detection and a manual/sensor
+trigger produce byte-identical downstream behaviour. Trigger A still depends on §16 and its
+≤15s latency budget (§14); trigger B is entirely local to the Pi and works even with §16
+unresolved — which is why it shipped first.
 
-**Future work (not in this document's scope):** once camera-based motion detection ships, decide whether it becomes a second, independent alert trigger alongside the sensor network, or whether it's used to corroborate/suppress sensor-triggered alerts (e.g., to reduce false positives). Not needed for initial release.
+**Detection is class-gated, not motion-gated.** Only labels in
+`config.DETECT_TARGET_LABELS` (default: `person`) raise an event, and a cooldown window
+suppresses repeat events. This is a deliberate false-positive strategy: a pet or a moving
+curtain produces frames but not alerts, which is the failure mode naive frame-differencing
+motion detection suffers from.
+
+**Still open:** whether the camera detector should *corroborate or suppress* sensor-triggered
+alerts rather than firing independently (e.g. sensor trip + no person seen → lower-confidence
+alert). Today the two triggers do not consult each other. See §22.
 
 ---
 
@@ -597,6 +614,7 @@ Consolidated list, roughly in priority order for what blocks further design vs. 
 
 | Date | Change |
 |---|---|
+| 2026-08-13 | **Camera-based motion detection shipped, superseding the §19 "monitoring-only" decision.** `pi_hub/detect.py` runs MobileNet-SSD via OpenCV DNN against the shared MediaMTX RTSP feed (not `/dev/video0` — the single-publisher rule in §19/`camera.py` still holds) and raises person-gated events through the new `pi_hub/events.py`, the same pipeline `POST /motion` uses. Rewrote §19 around two independent triggers instead of one; updated §2 and the component table, which both still claimed the camera did no detection. Notable: this trigger is entirely local to the Pi, so it works with §16 still unresolved — the reason it shipped ahead of the sensor path. New open item in §19: the two triggers do not corroborate each other. Weights are sha256-verified at fetch time, not vendored. |
 | 2026-08-02 | Consolidated ESP32 hardware architecture and Local-First Storyboard into a single full architecture document. Flagged §16 (ESP↔Pi link) and §19 (camera/motion ownership) as the two unresolved cross-cutting gaps. |
 | 2026-08-02 | Confirmed: no camera on any ESP32 (S3 or WROOM) — camera is Pi-attached only. Updated §2 and §19 accordingly; narrowed §19 to the remaining open question of whether ESP32 sensor events also feed the alert pipeline. |
 | 2026-08-02 | Added §20 (Arm/Disarm State Machine) — previously entirely undocumented. Captured: Pi as state authority, app/console arm with no PIN, app/console disarm requiring PIN, no entry/exit delay, armed-trigger beep. Flagged open questions: console PIN input hardware, beep vs. push semantics, disarmed-state logging. Renumbered §20-22 to §21-23 accordingly. |

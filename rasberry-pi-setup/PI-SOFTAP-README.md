@@ -54,13 +54,43 @@ Shared camera: **one** ffmpeg publisher → MediaMTX; live uses WebRTC, clips re
 
 | Method | Path | Module |
 |--------|------|--------|
-| GET | `/health` | hub (`mode: hub`, `publishing`, `webrtc`) |
+| GET | `/health` | hub (`mode: hub`, `publishing`, `webrtc`, `detection`) |
 | POST | `/start` `/stop` | `pi_hub.live` (WebRTC session; publisher stays) |
-| POST | `/motion` | `pi_hub.clips` (RTSP record) → `pi_hub.drive` |
+| POST | `/motion` | `pi_hub.events` → `pi_hub.clips` (RTSP record) → `pi_hub.drive` |
 | POST | `/auth/drive` | `pi_hub.drive` |
 | GET | `/clips/cache` | local clip list (debug) |
+| POST | `/detect/start` `/detect/stop` | `pi_hub.detect` (OpenCV DNN on the shared RTSP feed) |
+| GET | `/detect/status` | detector state, counters, last detection |
 
 Package: `pi_hub/` · units: `systemd/pi-hub.service`, `systemd/mediamtx.service`
+
+### Object detection
+
+`pi_hub.detect` reads the same MediaMTX RTSP path as clips (never `/dev/video0` —
+`pi_hub.camera` owns that) and runs MobileNet-SSD through OpenCV's DNN module on a
+background thread. A `person` above the confidence floor raises a motion event via
+`pi_hub.events`, the identical path `POST /motion` uses, so detection and manual
+triggers produce the same clip + Drive upload.
+
+Weights are not in git. Fetch them (sha256-verified) once per Pi:
+
+```bash
+sudo ./scripts/fetch-detection-model.sh   # → homesecurity/models/
+sudo systemctl restart pi-hub
+curl -s http://localhost:4000/detect/status | jq
+```
+
+Tuning lives in `pi_hub/config.py`: `DETECT_TARGET_LABELS` (default `person` only —
+a cat should not wake anyone), `DETECT_MIN_CONFIDENCE`, `DETECT_INTERVAL_SEC`
+(inference sample rate, not frame rate) and `DETECT_COOLDOWN_SEC` (event
+suppression window). Without weights or without OpenCV installed the hub still
+boots and serves every other endpoint; `/detect/status` reports why detection is off.
+
+Decision logic is unit tested without hardware:
+
+```bash
+cd rasberry-pi-setup && python3 -m unittest discover -s tests -v
+```
 
 ## API Endpoints
 
