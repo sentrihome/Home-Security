@@ -1,0 +1,4 @@
+{
+    "java.compile.nullAnalysis.mode": "automatic",
+    "cmake.sourceDirectory": "C:/hs/Home-Security/ESPFirmwareV2/centralconsole_ap"
+}
