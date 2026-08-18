@@ -26,25 +26,42 @@ Nothing in Phase 1+ should start until these are answered — they change API sh
 
 Build the part of the system that has zero external dependencies (no Pi, no app, no cloud) — just the two console-side ESP32s talking to each other and to a phone.
 
-1. [ ] Implement the UART frame format (§9): `SYNC | CMD | LEN | PAYLOAD | CRC`. Write this before any of the commands that use it — get framing, checksum validation, and buffer-split handling solid first, since a bug here silently corrupts every message type built on top of it.
+1. [x] Implement the UART frame format (§9): `SYNC | CMD | LEN | PAYLOAD | CRC`. Write this before any of the commands that use it — get framing, checksum validation, and buffer-split handling solid first, since a bug here silently corrupts every message type built on top of it.
+   - [ ] **Bug fix — sync byte mismatch.** `app_uart.cpp` currently matches `'c'`/`'8'` (0x63/0x38, printable ASCII) instead of the spec'd `0xAA 0x55` (§9, D16). ASCII sync bytes risk false-locking mid-payload during resync (e.g. an SSID or password containing `c8`). Fix both WROOM sender and S3 receiver together — flash as a pair, don't roll one side ahead.
 
 2. [ ] Implement the confirmed command set (§9): home WiFi creds, connection result, sensor event relay, status/heartbeat. Leave the two Phase-0-dependent commands (motion-relay tagging, arm/disarm-to-sensor) until Phase 0 lands.
+   - [x] `MOBILE_PAIRING` — cmd_s enum, dispatch switch, frame send/receive with CMD param, async response queue (esp2)
+   - [x] `CONNECTION_RESULT` — S3 → WROOM WiFi join ack
+     - [ ] **Bug fix — false-success on DHCP failure.** Currently signals on `WIFI_EVENT_STA_CONNECTED` (association only, not addressable). Move to `IP_EVENT_STA_GOT_IP`. Bump `pair.cpp` timeout 5000ms → 9000ms to keep DHCP in budget (§4 step 5, updated).
+     - [ ] **Bug fix — stale queue entry.** `xQueueSend` from a timed-out attempt can land after the timeout already fired, and get consumed as a false "success" by the *next* attempt. Add `xQueueReset(wait_for_wifi_to_connect)` at the top of `wifi_start()`.
+     - [ ] **Bug fix — uninitialized `received`.** `pair.cpp`'s local `bool received` is read after `xQueueReceive` without being initialized first; on timeout the buffer is untouched and the value is garbage. Initialize to `false`.
+     - [ ] Confirm `esp_wifi_connect()`'s return in the `STA_DISCONNECTED` handler is intentionally discarded when `wifi_start()`'s `esp_wifi_stop()` triggers a spurious disconnect event (`ESP_ERR_WIFI_NOT_STARTED`) — not asserted on.
+   - [ ] `SENSOR_EVENT` — WROOM → S3 ongoing telemetry
+   - [ ] `STATUS_HEARTBEAT` — S3 → WROOM liveness ping
 
-3. [ ] Implement per-unit setup AP credential derivation (§6): `HMAC(batch_secret, MAC_address)`, or hardcode batch-unique creds as an MVP fallback. Get the label/QR generation pipeline working in parallel — manufacturing will need it before units ship regardless of firmware readiness.
+3. [ ] **Currently: hardcoded shared default, not batch- or MAC-derived (§6, confirmed).** All units ship with the same fixed setup AP credentials — this is the MVP-fallback end of the spectrum, not yet even batch-unique. Per-unit derivation (`HMAC(batch_secret, MAC_address)`) is tracked as a planned item, not yet started (§22 #12). Label/QR generation pipeline (Phase 10) is blocked on this — nothing unit-specific to print yet.
 
 4. [ ] Implement the console provisioning flow end-to-end (§4): phone → WROOM setup AP → UART → S3 → home WiFi join → PSK generation → PSK back to phone.
+   - [x] Steps 1–6 implemented (WiFi creds relay, S3 join attempt, connection result relay) — see bug fixes under step 2 above; flow works but currently reports false positives on DHCP failure until those land.
+   - [x] PSK generation — confirmed 32-char alphanumeric via `esp_random()` (§7, updated from ~20-char).
+   - [x] SSID — confirmed static (`"espwifi"`), not MAC-derived (§4 step 7, §2). Not a spec defect; MAC-derivation is a planned item (§22 #6), not a blocking requirement.
+   - [ ] **Known gap — step 8 AP transition commented out.** WROOM's setup-AP-close / transition-to-hub-only-mode is currently disabled in firmware for debugging (setup AP stays live post-pairing so traffic can be inspected without reflashing). Must be re-enabled before this leaves dev — track explicitly, don't let it slip into a release build silently.
+   - [ ] Step 9 (WROOM → S3 → Pi PSK backup) — blocked on §16 (Phase 4).
 
-5. [ ] Implement failure handling (§8): reason-code-based error surfacing, retry cap, physical-button re-entry to setup mode. Don't treat this as polish — it's the difference between a returnable product and a support-ticket generator.
+5. [ ] Implement failure handling (§8) — **spec simplified since last revision: binary outcome only.** S3 reports `wifiConnection: true`/`false` over UART, no reason code surfaced to WROOM/phone/app. Simpler build than originally scoped:
+   - [ ] No reason-code UX needed — drop that from scope.
+   - [ ] No retry cap / no physical-button re-entry needed for this flow specifically — S3's `esp_wifi_connect()` retry loop runs indefinitely by design; the phone already has `false` and can re-trigger. (Retry-cap-then-button-reentry pattern still applies elsewhere, e.g. §12 sensor reconnect — don't conflate the two.)
+   - [ ] Confirm `last_disconnect_reason` (captured in the `STA_DISCONNECTED` handler) is stored but deliberately not wired to any UART command or app-facing behavior — leave the hook in place for future use, no further work needed now.
 
-6. [ ] Implement credential storage per §7's table exactly: home WiFi creds and disarm PIN both live in S3 NVS only; sensor PSK and `sensor_key`s live in WROOM NVS. Double-check nothing leaks into the wrong device's flash.
+6. [ ] Implement credential storage per §7's table exactly: home WiFi creds and disarm PIN both live in S3 NVS only; sensor PSK and `sensor_key`s live in WROOM NVS. Double-check nothing leaks into the wrong device's flash. Note PSK is now 32 chars — confirm NVS value size accommodates this (32-char ASCII well within any reasonable NVS blob/string limit, but verify no fixed-width buffer elsewhere assumes the old ~20-char length).
 
-**Test against:** the pairing/provisioning steps in §4 and the failure table in §8, manually, before writing any automated test harness — you want to feel the actual UX friction first.
+**Test against:** the pairing/provisioning steps in §4 and the failure table in §8, manually, before writing any automated test harness — you want to feel the actual UX friction first. Re-run this pass after the bug fixes above land, not just once at the end.
 
 ---
 
 ## Phase 2 — Sensor pairing and network
 
-1. [ ] Implement sensor-side setup AP with the same per-unit credential derivation as Phase 1 step 3.
+1. [ ] Implement sensor-side setup AP with the same per-unit credential derivation as Phase 1 step 3. **Note:** Phase 1 step 3 is currently hardcoded/shared, not per-unit — build sensor-side setup AP against whatever Phase 1 step 3 actually ships with at the time, not the eventual per-unit-derived target, to avoid rework churn.
 
 2. [ ] Implement the pairing flow (§5): phone → sensor setup AP → SSID+PSK handoff → sensor joins WROOM AP as station → `sensor_key` handshake → WROOM marks paired.
 
@@ -83,9 +100,9 @@ This is gated entirely on Phase 0's transport decision. Once that's made:
 
 4. [ ] Implement the motion-alert relay: `Sensor → WROOM → S3 (UART) → Pi (§16) → FCM/ntfy` (§19, §20).
 
-5. [ ] Implement the PSK backup push: WROOM generates PSK → UART to S3 → S3 pushes to Pi (§11) — note the direction, S3 is the only thing that can reach the Pi, not the WROOM.
+5. [ ] Implement the PSK backup push: WROOM generates PSK → UART to S3 → S3 pushes to Pi (§11) — note the direction, S3 is the only thing that can reach the Pi, not the WROOM. PSK is now 32 chars — no transport impact, just noting for anyone sizing payloads against the old ~20-char figure.
 
-6. [ ] **Latency-test the full alert chain end to end against the ≤15s budget (§14, §16)** before considering this phase done. Test each hop's latency individually too — if the budget is blown, you need to know which hop is the problem, not just that the total is over.
+6. [ ] **Latency-test the full alert chain end to end against the ≤15s budget (§14, §16)** before considering this phase done. Test each hop's latency individually too — if the budget is blown, you need to know which hop is the problem, not just that the total is over. Factor in the Phase 1 WiFi-join timeout change (5s→9s) if it's ever relevant to a hop here — it isn't directly (that's provisioning-time, not runtime), but worth a sanity check that no runtime path accidentally reuses that constant.
 
 **This phase is also where the Phase 0 sensor-arm-state decision gets implemented** — whichever answer you picked (sensor-side gating vs. centralized gating at the S3/Pi) gets built here.
 
@@ -161,11 +178,15 @@ Run these only after Phases 1–8 are individually working — this phase is abo
 
 - [ ] Reboot matrix: reboot each device (Pi, S3, WROOM, individual sensors) independently and in combination, confirm the system recovers per §12's documented behavior in each case.
 
+- [ ] Re-run provisioning against §8's simplified binary-outcome spec — confirm the app handles a bare `true`/`false` cleanly with no leftover reason-code UI expecting data that will never arrive.
+
 ---
 
 ## Phase 10 — Manufacturing / physical
 
 Can run in parallel with software phases once Phase 1 step 3's credential derivation is finalized — this doesn't block or get blocked by most software work, but needs to be ready before the first physical batch ships.
+
+**Currently blocked:** Phase 1 step 3 is still shipping hardcoded shared credentials (§6, §22 #12), so there's no per-unit value yet to put on a label/QR. This phase can't meaningfully start until that lands.
 
 - [ ] Label/QR printing pipeline for setup AP credentials — confirm it's placed inside packaging or under a peel-back sticker, never on the outer box (§23).
 
@@ -193,3 +214,4 @@ These are documented as open in `architecture.md` §22 and don't have an impleme
 
 - Internet-outage alert fallback (item 11) — if home internet is down, there is currently **no alert path at all**. Worth deciding whether this blocks v1 launch or ships as a known limitation.
 - Tamper detection, multi-user/multi-phone pairing, general event history/log, full Pi API auth coverage (item 11) — none of these have a phase above because none have a design yet. Route them through Phase 0-style design work before they get their own implementation phase.
+- Per-unit setup AP credential derivation (item 12) and per-unit/MAC-derived SSID (item 6) — both confirmed planned, not started; Phase 1 step 3 and Phase 10 are blocked on the former specifically.

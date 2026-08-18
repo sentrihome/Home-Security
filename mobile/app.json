@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "homesecurity",
+    "scheme": ["homesecurity", "com.sinisterchiller.homesecurity"],
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
