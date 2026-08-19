@@ -6,8 +6,11 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PI_HOME="/home/koushik"
+# Canonical git clone on the Pi (boot + CI pull from here).
+PI_REPO_DIR="${PI_REPO_DIR:-$PI_HOME/apps/Home-Security}"
 
 echo "=== Installing Pi SoftAP + Hub ==="
+echo "Git clone: $PI_REPO_DIR"
 
 if [ "$EUID" -ne 0 ]; then
     echo "Please run as root: sudo ./install-pi-setup.sh"
@@ -44,6 +47,7 @@ cp -a "$SCRIPT_DIR/pi_hub" "$PI_HOME/pi_hub"
 chown -R koushik:koushik "$PI_HOME/pi_hub"
 mkdir -p "$PI_HOME/homesecurity/hls" "$PI_HOME/homesecurity/clips" \
          "$PI_HOME/homesecurity/logs" "$PI_HOME/homesecurity/models"
+echo "$PI_REPO_DIR" > "$PI_HOME/homesecurity/repo-dir"
 chown -R koushik:koushik "$PI_HOME/homesecurity"
 
 echo "Fetching object detection model (MobileNet-SSD)..."

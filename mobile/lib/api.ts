@@ -114,8 +114,17 @@ export const cloudApi = {
 
 /** Pi backend (port 4000) */
 export const piApi = {
-  health: (baseUrl?: string) =>
-    request('/health', { baseUrl: baseUrl ?? getPiBaseUrl() }),
+  health: async (baseUrl?: string) => {
+    const base = baseUrl ?? getPiBaseUrl();
+    try {
+      return await request<Record<string, unknown>>('/health', { baseUrl: base });
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 404 || error.status === 405)) {
+        return await request<Record<string, unknown>>('/status', { baseUrl: base });
+      }
+      throw error;
+    }
+  },
 
   start: (type: string, value = '', baseUrl?: string) =>
     request<LiveStartResponse>('/start', {

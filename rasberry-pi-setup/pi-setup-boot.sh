@@ -8,10 +8,10 @@ PI_HOME="/home/koushik"
 LOG_FILE="/var/log/pi-setup.log"
 LIB="$PI_HOME/pi-setup-lib.sh"
 TRACK_BRANCH="${PI_TRACK_BRANCH:-pie-dev-testing}"
-REPO_DIR="${REPO_DIR:-$PI_HOME/Home-Security}"
-if [ ! -d "$REPO_DIR/.git" ] && [ -d "$PI_HOME/apps/Home-Security/.git" ]; then
-    REPO_DIR="$PI_HOME/apps/Home-Security"
+if [ -z "${REPO_DIR:-}" ] && [ -f "$PI_HOME/homesecurity/repo-dir" ]; then
+    REPO_DIR="$(tr -d '[:space:]' < "$PI_HOME/homesecurity/repo-dir")"
 fi
+REPO_DIR="${REPO_DIR:-$PI_HOME/apps/Home-Security}"
 
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
@@ -21,6 +21,11 @@ log() {
     echo "$msg" >>"$LOG_FILE"
     echo "$msg" >&2
 }
+
+if [ ! -d "$REPO_DIR/.git" ] && [ -d "$PI_HOME/Home-Security/.git" ]; then
+    log "WARNING: $REPO_DIR has no git clone — falling back to $PI_HOME/Home-Security"
+    REPO_DIR="$PI_HOME/Home-Security"
+fi
 
 log "=== Pi Setup Boot ==="
 

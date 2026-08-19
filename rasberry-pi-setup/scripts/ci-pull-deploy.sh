@@ -3,13 +3,13 @@
 # Run on the Pi:  ./scripts/ci-pull-deploy.sh [git-ref]
 #
 # Env:
-#   REPO_DIR   — clone path (default: /home/koushik/Home-Security)
+#   REPO_DIR   — clone path (default: /home/koushik/apps/Home-Security)
 #   SKIP_APT   — set to 1 to skip apt-get (default for CI)
 #   SKIP_HEALTH — set to 1 to skip curl /health check
 
 set -euo pipefail
 
-REPO_DIR="${REPO_DIR:-/home/koushik/Home-Security}"
+REPO_DIR="${REPO_DIR:-/home/koushik/apps/Home-Security}"
 TRACK_BRANCH="${TRACK_BRANCH:-pie-dev-testing}"
 REF="${1:-$TRACK_BRANCH}"
 SKIP_APT="${SKIP_APT:-1}"

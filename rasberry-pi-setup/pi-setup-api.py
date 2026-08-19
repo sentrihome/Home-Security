@@ -105,6 +105,7 @@ except Exception as e:
 
 
 @app.route("/status", methods=["GET"])
+@app.route("/health", methods=["GET"])
 def status():
     linked = False
     try:
@@ -115,15 +116,47 @@ def status():
         pass
     return jsonify(
         {
-            "status": "ready",
+            "status": "ok",
             "mode": "setup",
             "pi_mode": pi_mode(),
             "device": "raspberry-pi-home-security",
             "static_ip": STATIC_IP,
             "wifi_configured": wifi_configured(),
             "drive_token": linked,
+            "publishing": False,
+            "streaming": False,
+            "message": (
+                "SoftAP setup API. Camera/live/clips start after the Pi joins home Wi‑Fi."
+            ),
         }
     )
+
+
+def _hub_only():
+    return (
+        jsonify(
+            {
+                "ok": False,
+                "error": (
+                    "Pi is in SoftAP setup mode (not hub). "
+                    "Finish Wi‑Fi + Drive, wait for it to join home LAN, then retry."
+                ),
+                "mode": "setup",
+            }
+        ),
+        503,
+    )
+
+
+@app.route("/start", methods=["POST"])
+@app.route("/stop", methods=["POST"])
+@app.route("/motion", methods=["POST"])
+@app.route("/clips/cache", methods=["GET"])
+@app.route("/detect/start", methods=["POST"])
+@app.route("/detect/stop", methods=["POST"])
+@app.route("/detect/status", methods=["GET"])
+def hub_endpoints_while_setup():
+    return _hub_only()
 
 
 @app.route("/wifi", methods=["POST"])
@@ -279,7 +312,7 @@ if __name__ == "__main__":
 
     print("Pi Setup API starting on 0.0.0.0:4000...")
     print("Endpoints:")
-    print("  GET  /status  - Health check")
+    print("  GET  /status  /health - Setup health (mode: setup)")
     print("  GET  /scan    - List WiFi networks")
     print("  GET  /dev     - Drive sign-in portal")
     print("  POST /auth/drive - Phone Google token handoff")
