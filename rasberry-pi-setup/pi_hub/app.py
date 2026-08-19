@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
 
 from pathlib import Path
 
@@ -81,12 +82,17 @@ def stop_live():
 
 @app.route("/motion", methods=["POST"])
 def motion():
-    """Record a clip from the shared RTSP feed, then attempt Drive upload."""
+    """Ack immediately, then record a clip and attempt Drive upload."""
     body = request.get_json(silent=True) or {}
     duration = body.get("duration")
     source = body.get("source", "manual")
-    result = events.handle_motion(source=source, duration_sec=duration)
-    return jsonify(result), 200 if result.get("ok") else 500
+    threading.Thread(
+        target=events.handle_motion,
+        kwargs={"source": source, "duration_sec": duration},
+        daemon=True,
+        name="motion-clip",
+    ).start()
+    return jsonify({"received": "ok"}), 200
 
 
 @app.route("/detect/start", methods=["POST"])
