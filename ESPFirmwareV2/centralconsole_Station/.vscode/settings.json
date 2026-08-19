@@ -13,7 +13,7 @@
   "clangd.arguments": [
     "--background-index",
     "--query-driver=**",
-    "--compile-commands-dir=/Users/anuragkoushik/Desktop/Deployment/Home-Security/ESPFirmwareV2/centralconsole_reboot/build"
+    "--compile-commands-dir=/Users/anuragkoushik/Desktop/Proj/Home-Security/ESPFirmwareV2/centralconsole_Station/build"
   ],
   "idf.flashType": "UART"
 }
