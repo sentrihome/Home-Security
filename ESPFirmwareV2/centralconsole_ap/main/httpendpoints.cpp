@@ -110,6 +110,26 @@ esp_err_t api_pair_resp(httpd_req_t *r)
     // return httpd_resp_sendstr(r, "{ \"pairing payload received\": \"ok\" }");
 }
 
+esp_err_t api_motion_resp(httpd_req_t *r)
+{
+    char buf[200];
+    int length = httpd_req_recv(r, buf, sizeof(buf) - 1);
+    if (length <= 0)
+    {
+        if (length == HTTPD_SOCK_ERR_TIMEOUT)
+        {
+            httpd_resp_send_408(r);
+        }
+        return ESP_FAIL;
+    }
+    buf[length] = '\0';
+
+    printf("From Motion: %s", buf);
+    uart.send(buf, cmd_s::SENSOR);
+
+    return httpd_resp_sendstr(r, "{ \"motion payload received\": \"ok\" }");
+}
+
 void endpoint_init()
 {
     waitfors3 = xQueueCreate(1, sizeof(std::string *));
@@ -131,4 +151,10 @@ void endpoint_init()
     api_pair_addr.method = HTTP_POST;
     api_pair_addr.handler = api_pair_resp;
     httpd_register_uri_handler(api, &api_pair_addr);
+
+    httpd_uri_t api_motion_addr = {};
+    api_motion_addr.uri = "/motion";
+    api_motion_addr.method = HTTP_POST;
+    api_motion_addr.handler = api_motion_resp;
+    httpd_register_uri_handler(api, &api_motion_addr);
 }
