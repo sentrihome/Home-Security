@@ -25,7 +25,6 @@ import { registerFcmWithPi } from '@/lib/notifications';
 import {
   PERMANENT_PASS_ALLOWED,
   PERMANENT_PASS_LENGTH,
-  generateOtp,
   generateRandomPassword,
   isValidPermanentPass,
 } from '@/lib/pairing';
@@ -35,7 +34,8 @@ import {
 } from '@/lib/storage';
 
 type SoftApMode = 'instructions' | 'scanning' | 'credentials' | 'submitting' | 'verify';
-type EspStep = 0 | 1 | 2 | 3 | 4 | 5;
+/** 0 = SoftAP health, 1 = collect fields + POST /pair, 2 = done */
+type EspStep = 0 | 1 | 2;
 
 interface WifiNetwork {
   ssid: string;
@@ -44,7 +44,7 @@ interface WifiNetwork {
 }
 
 const STEP_LABELS = ['Pi Wi-Fi', 'ESP32', 'Done'];
-const ESP_STEP_LABELS = ['Connect', 'Wi-Fi', 'Permanent', 'Random', 'Module'];
+const ESP_STEP_LABELS = ['Connect', 'Configure', 'Done'];
 
 /**
  * Setup wizard: Google Drive auth → Pi SoftAP → ESP SoftAP pairing.
@@ -55,7 +55,6 @@ export default function SetupScreen() {
     currentStep,
     setCurrentStep,
     piHost,
-    piBaseUrl,
     setPiHost,
     advanceFromPiSetup,
   } = useSetupWizard();
@@ -75,24 +74,17 @@ export default function SetupScreen() {
   const [connectionOk, setConnectionOk] = useState(false);
   const [wifiSsid, setWifiSsid] = useState('');
   const [wifiPassword, setWifiPassword] = useState('');
-  const [wifiCredsSent, setWifiCredsSent] = useState(false);
   const [permanentPass, setPermanentPass] = useState('');
   const [permanentPassError, setPermanentPassError] = useState<string | null>(null);
-  const [permanentPassSent, setPermanentPassSent] = useState(false);
   const [randomPass, setRandomPass] = useState('');
-  const [randomPassSent, setRandomPassSent] = useState(false);
-  const [modulePaired, setModulePaired] = useState(false);
+  const [armTime, setArmTime] = useState('');
+  const [disarmTime, setDisarmTime] = useState('');
+  const [securityKey, setSecurityKey] = useState('');
   const [espAcknowledged, setEspAcknowledged] = useState(false);
 
   const [deviceId, setDeviceId] = useState('');
   const [linkStatus, setLinkStatus] = useState('');
   const [linkBusy, setLinkBusy] = useState(false);
-  // TEMP: debug panel for sendOneTimePass + sendSchedule. Remove when drawer UI exists.
-  const [otpDisplay, setOtpDisplay] = useState('');
-  const [armTime, setArmTime] = useState('');
-  const [disarmTime, setDisarmTime] = useState('');
-  const [debugStatus, setDebugStatus] = useState('');
-  const [debugBusy, setDebugBusy] = useState(false);
 
   const [googleBusy, setGoogleBusy] = useState(false);
   const [googleStatus, setGoogleStatus] = useState('');
@@ -102,7 +94,6 @@ export default function SetupScreen() {
     if (currentStep > 0) setPiSetupDone(true);
     if (currentStep >= 2) {
       setEspAcknowledged(true);
-      setModulePaired(true);
     }
   }, [currentStep]);
 
@@ -270,12 +261,12 @@ export default function SetupScreen() {
     setConnectionOk(false);
     setWifiSsid('');
     setWifiPassword('');
-    setWifiCredsSent(false);
     setPermanentPass('');
     setPermanentPassError(null);
-    setPermanentPassSent(false);
-    setRandomPassSent(false);
-    setModulePaired(false);
+    setRandomPass('');
+    setArmTime('');
+    setDisarmTime('');
+    setSecurityKey('');
     setEspAcknowledged(false);
   }
 
@@ -298,31 +289,11 @@ export default function SetupScreen() {
       await esp.health();
       setConnectionOk(true);
       setEspStep(1);
-      setEspStatus('ESP connected.');
+      setEspStatus('ESP connected. Fill in the pairing fields, then send.');
     } catch (err) {
       setEspStatus(
-        `Connection failed: ${errMsg(err)}\n\nMake sure your phone is on the ESP32_Master_Config Wi-Fi.`
+        `Connection failed: ${errMsg(err)}\n\nJoin SoftAP "${esp.ESP_SOFTAP_SSID}" (password ${esp.ESP_SOFTAP_PASSWORD}), then retry.`
       );
-    } finally {
-      setEspBusy(false);
-    }
-  }
-
-  async function runEspStep1() {
-    if (!wifiSsid.trim() || !wifiPassword.trim()) {
-      setEspStatus('Enter your home Wi-Fi SSID and password.');
-      return;
-    }
-    setEspBusy(true);
-    setEspStatus('Sending Wi-Fi credentials...');
-    try {
-      await esp.sendSsid(wifiSsid);
-      await esp.sendPass(wifiPassword);
-      setWifiCredsSent(true);
-      setEspStep(2);
-      setEspStatus('Wi-Fi credentials sent.');
-    } catch (err) {
-      setEspStatus(`Failed to send Wi-Fi credentials: ${errMsg(err)}`);
     } finally {
       setEspBusy(false);
     }
@@ -346,119 +317,83 @@ export default function SetupScreen() {
     setPermanentPassError(null);
   }
 
-  async function runEspStep2() {
-    if (!isValidPermanentPass(permanentPass)) {
-      setPermanentPassError(
-        `Password must be exactly ${PERMANENT_PASS_LENGTH} characters`
-      );
-      return;
-    }
-    setEspBusy(true);
-    setEspStatus('Sending permanent password...');
-    try {
-      await esp.sendPermanentPass(permanentPass);
-      setPermanentPassSent(true);
-      setEspStep(3);
-      setEspStatus('Permanent password set.');
-    } catch (err) {
-      setEspStatus(`Failed to set permanent password: ${errMsg(err)}`);
-    } finally {
-      setEspBusy(false);
-    }
-  }
-
   function onGenerateRandom() {
     setRandomPass(generateRandomPassword());
   }
 
-  async function runEspStep3() {
-    if (!randomPass) {
-      setEspStatus('Generate a random password first.');
+  async function runEspPair() {
+    if (!wifiSsid.trim() || !wifiPassword.trim()) {
+      setEspStatus('Enter your home Wi-Fi SSID and password.');
       return;
     }
+    if (!isValidPermanentPass(permanentPass)) {
+      setPermanentPassError(
+        `Password must be exactly ${PERMANENT_PASS_LENGTH} characters`
+      );
+      setEspStatus('Enter a valid permanent password.');
+      return;
+    }
+    if (!randomPass) {
+      setEspStatus('Generate an encrypted SoftAP password first.');
+      return;
+    }
+
     setEspBusy(true);
-    setEspStatus('Sending random password to ESP...');
+    setEspStatus('Sending pairing payload to ESP (POST /pair)...');
     try {
       await saveEspRandomPassword(randomPass);
-      await esp.sendEncryptedPass(randomPass);
-      setRandomPassSent(true);
-      setEspStep(4);
-      setEspStatus(
-        'Random password saved on this phone.\n\nNow open your phone Wi-Fi settings and join "ESPMODULE", then come back and tap Start Pairing.'
-      );
-    } catch (err) {
-      setEspStatus(`Failed to send random password: ${errMsg(err)}`);
-    } finally {
-      setEspBusy(false);
-    }
-  }
+      const result = await esp.pair({
+        homessid: wifiSsid,
+        homepass: wifiPassword,
+        permpass: permanentPass,
+        encryptedpass: randomPass,
+        schedulestart: armTime.trim(),
+        schedulestop: disarmTime.trim(),
+        raspberrypiip: piHost || DEFAULT_PI_HOST,
+        securitykey: securityKey.trim() || undefined,
+      });
 
-  async function runEspStep4() {
-    setEspBusy(true);
-    setEspStatus('Pairing module...');
-    try {
-      const passToSend = (await loadEspRandomPassword()) ?? randomPass;
-      if (!passToSend) {
-        setEspStatus('No saved random password. Redo the random SoftAP step while on the ESP main Wi-Fi.');
+      if (result.pairingStatus === 'NO ACCESS') {
+        setEspStatus(
+          'ESP returned NO ACCESS. Put the central console on the setup screen, then retry.'
+        );
         return;
       }
-      const response = await esp.sendMainConnection(passToSend);
-      if (response.trim().toUpperCase() === 'OK') {
-        setModulePaired(true);
-        setEspAcknowledged(true);
-        setEspStep(5);
-        setCurrentStep(2);
-        setEspStatus('');
-      } else {
+      if (
+        result.pairingStatus === 'corrupted' ||
+        result.pairingStatus === 'INVALID JSON'
+      ) {
         setEspStatus(
-          `Module responded but pairing was not confirmed.\nResponse: ${response.slice(0, 200)}`
+          `Pairing rejected (${result.pairingStatus}). Response: ${result.raw.slice(0, 200)}`
         );
+        return;
       }
+      if (result.wifiConnection === false) {
+        setEspStatus(
+          'Payload received, but the console failed to join home Wi-Fi. Check SSID/password and retry.'
+        );
+        return;
+      }
+      if (result.wifiConnection !== true) {
+        setEspStatus(
+          `Unexpected ESP response.\n${result.raw.slice(0, 240)}`
+        );
+        return;
+      }
+
+      const apNote = result.newApPassword
+        ? `\nNew AP password from ESP: ${result.newApPassword}`
+        : '';
+      setEspAcknowledged(true);
+      setEspStep(2);
+      setCurrentStep(2);
+      setEspStatus(`Pairing OK — console joined home Wi-Fi.${apNote}`);
     } catch (err) {
       setEspStatus(
-        `Module pairing failed: ${errMsg(err)}\n\nMake sure you're connected to the ESPMODULE Wi-Fi.`
+        `Pairing failed: ${errMsg(err)}\n\nStay on SoftAP "${esp.ESP_SOFTAP_SSID}" until the request finishes.`
       );
     } finally {
       setEspBusy(false);
-    }
-  }
-
-  function generateAndShowOtp() {
-    setOtpDisplay(generateOtp());
-    setDebugStatus('OTP generated. Tap Send OTP to push it to the ESP.');
-  }
-
-  async function sendOtp() {
-    if (!otpDisplay) {
-      setDebugStatus('Generate an OTP first.');
-      return;
-    }
-    setDebugBusy(true);
-    setDebugStatus('Sending OTP...');
-    try {
-      const response = await esp.sendOneTimePass(otpDisplay);
-      setDebugStatus(`OTP sent. Response: ${response.slice(0, 200)}`);
-    } catch (err) {
-      setDebugStatus(`OTP failed: ${errMsg(err)}`);
-    } finally {
-      setDebugBusy(false);
-    }
-  }
-
-  async function sendSchedule() {
-    if (!armTime.trim() || !disarmTime.trim()) {
-      setDebugStatus('Enter both arm and disarm times (HH:MM).');
-      return;
-    }
-    setDebugBusy(true);
-    setDebugStatus('Sending schedule...');
-    try {
-      const response = await esp.sendSchedule(armTime.trim(), disarmTime.trim());
-      setDebugStatus(`Schedule sent. Response: ${response.slice(0, 200)}`);
-    } catch (err) {
-      setDebugStatus(`Schedule failed: ${errMsg(err)}`);
-    } finally {
-      setDebugBusy(false);
     }
   }
 
@@ -640,12 +575,13 @@ export default function SetupScreen() {
       <StepCard
         n={2}
         title="Configure ESP32"
-        subtitle={`Pi master backend: ${piHost} (${piBaseUrl}). Join ESP32_Master_Config, then complete pairing.`}
+        subtitle={`Join SoftAP "${esp.ESP_SOFTAP_SSID}" (password ${esp.ESP_SOFTAP_PASSWORD}). Pi IP for payload: ${piHost}. One POST /pair sends all fields.`}
         active={currentStep === 1}
         done={espAcknowledged}
         alwaysShowBody={currentStep === 1}>
         <Text style={styles.hint}>
-          Sub-steps: {ESP_STEP_LABELS.map((l, i) => (i === espStep ? `[${l}]` : l)).join(' → ')}
+          Sub-steps:{' '}
+          {ESP_STEP_LABELS.map((l, i) => (i === espStep ? `[${l}]` : l)).join(' → ')}
         </Text>
 
         {espStatus ? (
@@ -668,86 +604,89 @@ export default function SetupScreen() {
             <TextInput
               value={wifiSsid}
               onChangeText={setWifiSsid}
-              placeholder="Home Wi-Fi SSID"
+              placeholder="Home Wi-Fi SSID (homessid)"
               placeholderTextColor="#9ca3af"
               autoCapitalize="none"
               autoCorrect={false}
-              editable={!wifiCredsSent}
               style={styles.input}
             />
             <TextInput
               value={wifiPassword}
               onChangeText={setWifiPassword}
-              placeholder="Home Wi-Fi password"
+              placeholder="Home Wi-Fi password (homepass)"
               placeholderTextColor="#9ca3af"
               autoCapitalize="none"
               autoCorrect={false}
-              editable={!wifiCredsSent}
               style={styles.input}
             />
-            <PrimaryButton
-              label={wifiCredsSent ? 'Sent' : 'Send Wi-Fi credentials'}
-              loading={espBusy}
-              disabled={wifiCredsSent || !wifiSsid.trim() || !wifiPassword.trim()}
-              onPress={runEspStep1}
-            />
-          </>
-        ) : null}
-
-        {espStep === 2 ? (
-          <>
             <TextInput
               value={permanentPass}
               onChangeText={onPermanentPassChange}
-              placeholder="e.g. 1234ABCD"
+              placeholder="Permanent pass e.g. 1234ABCD (permpass)"
               placeholderTextColor="#9ca3af"
               autoCapitalize="characters"
               autoCorrect={false}
-              editable={!permanentPassSent}
               style={styles.input}
             />
             <Text style={styles.helper}>
               {permanentPassError ??
                 `${permanentPass.length}/${PERMANENT_PASS_LENGTH} characters (0-9, A-D, #, *)`}
             </Text>
-            <PrimaryButton
-              label={permanentPassSent ? 'Saved' : 'Save permanent password'}
-              loading={espBusy}
-              disabled={permanentPassSent || !isValidPermanentPass(permanentPass)}
-              onPress={runEspStep2}
-            />
-          </>
-        ) : null}
 
-        {espStep === 3 ? (
-          <>
             {randomPass ? (
               <View style={styles.passCard}>
                 <Text style={styles.passText}>{randomPass}</Text>
               </View>
             ) : null}
             <PrimaryButton
-              label="Generate"
+              label="Generate encryptedpass"
               variant="secondary"
-              disabled={randomPassSent}
               onPress={onGenerateRandom}
             />
+
+            <TextInput
+              value={armTime}
+              onChangeText={setArmTime}
+              placeholder="Arm time HH:MM (schedulestart, optional)"
+              placeholderTextColor="#9ca3af"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
+            <TextInput
+              value={disarmTime}
+              onChangeText={setDisarmTime}
+              placeholder="Disarm time HH:MM (schedulestop, optional)"
+              placeholderTextColor="#9ca3af"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
+            <Text style={styles.helper}>
+              raspberrypiip will be sent as {piHost || DEFAULT_PI_HOST}
+            </Text>
+            <TextInput
+              value={securityKey}
+              onChangeText={setSecurityKey}
+              placeholder="securitykey (optional)"
+              placeholderTextColor="#9ca3af"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
             <PrimaryButton
-              label={randomPassSent ? 'Sent & saved' : 'Send & save'}
+              label="Send pairing payload"
               loading={espBusy}
-              disabled={randomPassSent || !randomPass}
-              onPress={runEspStep3}
+              disabled={
+                espBusy ||
+                !wifiSsid.trim() ||
+                !wifiPassword.trim() ||
+                !isValidPermanentPass(permanentPass) ||
+                !randomPass
+              }
+              onPress={runEspPair}
             />
           </>
-        ) : null}
-
-        {espStep === 4 ? (
-          <PrimaryButton
-            label={modulePaired ? 'Paired' : 'Start pairing'}
-            loading={espBusy}
-            disabled={modulePaired}
-            onPress={runEspStep4}
-          />
         ) : null}
       </StepCard>
 
@@ -755,7 +694,7 @@ export default function SetupScreen() {
         <View style={styles.doneCard}>
           <Text style={styles.doneTitle}>Setup complete</Text>
           <Text style={styles.doneBody}>
-            Pi is saved at {piHost}. ESP main and module are configured. Reconnect the
+            Pi is saved at {piHost}. ESP pairing payload was accepted. Reconnect the
             phone to your home Wi-Fi to use the app normally. You can still link a cloud
             device ID below.
           </Text>
@@ -790,59 +729,6 @@ export default function SetupScreen() {
           onPress={linkDevice}
         />
         {linkStatus ? <Text style={styles.status}>{linkStatus}</Text> : null}
-      </View>
-
-      <View style={styles.divider} />
-
-      <View style={styles.card}>
-        <Text style={styles.section}>Debug — OTP & Schedule</Text>
-        <Text style={styles.helper}>
-          Temporary. Remove once the drawer UI is built.
-        </Text>
-
-        {otpDisplay ? (
-          <View style={styles.passCard}>
-            <Text style={styles.passText}>{otpDisplay}</Text>
-          </View>
-        ) : null}
-        <PrimaryButton
-          label="Generate OTP"
-          variant="secondary"
-          onPress={generateAndShowOtp}
-        />
-        <PrimaryButton
-          label="Send OTP to ESP"
-          loading={debugBusy}
-          disabled={!otpDisplay}
-          onPress={sendOtp}
-        />
-
-        <TextInput
-          value={armTime}
-          onChangeText={setArmTime}
-          placeholder="Arm time (HH:MM)"
-          placeholderTextColor="#9ca3af"
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={styles.input}
-        />
-        <TextInput
-          value={disarmTime}
-          onChangeText={setDisarmTime}
-          placeholder="Disarm time (HH:MM)"
-          placeholderTextColor="#9ca3af"
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={styles.input}
-        />
-        <PrimaryButton
-          label="Send schedule"
-          loading={debugBusy}
-          disabled={!armTime.trim() || !disarmTime.trim()}
-          onPress={sendSchedule}
-        />
-
-        {debugStatus ? <Text style={styles.helper}>{debugStatus}</Text> : null}
       </View>
     </Screen>
   );

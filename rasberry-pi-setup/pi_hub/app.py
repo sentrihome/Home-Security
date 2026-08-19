@@ -5,8 +5,10 @@ Endpoints (local-first; matches mobile piApi stubs + architecture §15–§18):
   GET  /health
   POST /start          → live HLS
   POST /stop
-  POST /motion         → cache clip → Drive upload
+  POST /motion         → FCM alert + cache clip → Drive upload
   POST /auth/drive     → store refresh token from app
+  POST /auth/fcm       → store Android FCM token
+  POST /alert/test     → send test FCM alert
   GET  /hls/<file>     → serve HLS playlist/segments
   GET  /clips/cache    → list local cache (debug)
 """
@@ -15,11 +17,10 @@ from __future__ import annotations
 
 import logging
 import sys
-from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from . import clips, config, drive, live
+from . import clips, config, drive, fcm, live
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,6 +41,7 @@ def health():
             "static_ip": config.STATIC_IP,
             "streaming": live.is_streaming(),
             "drive_token": drive.has_token(),
+            "fcm_token": fcm.has_token(),
         }
     )
 
@@ -60,10 +62,16 @@ def stop_live():
 
 @app.route("/motion", methods=["POST"])
 def motion():
-    """Record a clip to local cache, then attempt Drive upload."""
+    """Send FCM alert, record a clip to local cache, then attempt Drive upload."""
+    alert = fcm.send_alert(
+        "Home Security",
+        "Motion detected",
+        {"screen": "live"},
+    )
+
     path = clips.record_clip()
     if path is None:
-        return jsonify({"ok": False, "error": "record failed"}), 500
+        return jsonify({"ok": False, "error": "record failed", "alert": alert}), 500
 
     upload = drive.upload_clip(path)
     return jsonify(
@@ -72,6 +80,7 @@ def motion():
             "clip": path.name,
             "path": str(path),
             "upload": upload,
+            "alert": alert,
         }
     )
 
@@ -84,6 +93,28 @@ def auth_drive():
     email = body.get("email")
     result = drive.store_token(refresh_token=refresh_token or "", email=email or "")
     status = 200 if result.get("ok") else 400
+    return jsonify(result), status
+
+
+@app.route("/auth/fcm", methods=["POST"])
+def auth_fcm():
+    """Phone registers Android FCM device token (LAN / Tailscale)."""
+    body = request.get_json(silent=True) or {}
+    token = body.get("token") or ""
+    platform = body.get("platform") or "android"
+    result = fcm.store_token(token=token, platform=platform)
+    status = 200 if result.get("ok") else 400
+    return jsonify(result), status
+
+
+@app.route("/alert/test", methods=["POST"])
+def alert_test():
+    """Send a test FCM notification (no clip)."""
+    body = request.get_json(silent=True) or {}
+    title = body.get("title") or "Home Security"
+    message = body.get("body") or "Test alert"
+    result = fcm.send_alert(title, message, {"screen": "live"})
+    status = 200 if result.get("ok") else 502
     return jsonify(result), status
 
 
@@ -104,8 +135,9 @@ def main() -> None:
     config.HLS_DIR.mkdir(parents=True, exist_ok=True)
     config.CLIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    log.info("Pi hub starting on %s:%s (live + clips + Drive)", config.HOST, config.PORT)
+    log.info("Pi hub starting on %s:%s (live + clips + Drive + FCM)", config.HOST, config.PORT)
     log.info("Data dir: %s", config.DATA_DIR)
+    log.info("FCM service account: %s", config.FCM_SERVICE_ACCOUNT_PATH)
     app.run(host=config.HOST, port=config.PORT, debug=False)
 
 
