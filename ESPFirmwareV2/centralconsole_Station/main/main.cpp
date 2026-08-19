@@ -44,6 +44,15 @@ void keypad_task(void *arg)
   }
 }
 
+void debounce_task(void *arg)
+{
+  for (;;)
+  {
+    keypad.debounce();
+    vTaskDelay(pdMS_TO_TICKS(25));
+  }
+}
+
 extern "C" void app_main(void)
 {
   initArduino();
@@ -62,5 +71,6 @@ extern "C" void app_main(void)
   xTaskCreate(display_task, "display_task", 4096, NULL, 2, NULL);
   xTaskCreate(uart_task, "uart_task", 4096, NULL, 2, NULL);
   xTaskCreate(keypad_task, "keypad_task", 4096, NULL, 2, NULL);
+  xTaskCreate(debounce_task, "debounce_task", 4096, NULL, 2, NULL);
 
 }

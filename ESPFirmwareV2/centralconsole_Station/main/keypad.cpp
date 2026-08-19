@@ -4,12 +4,6 @@ keypad_s keypad;
 QueueHandle_t what_gpio_to_debounce;
 QueueHandle_t keydebounce;
 
-void debounce_task(void *arg) {
-    for (;;) {
-        keypad.debounce();   
-    }
-}
-
 void keypad_s::init(){
     //GPIO ROW Config
     gpio_config_t row1;
@@ -92,8 +86,6 @@ void keypad_s::init(){
     // Create debounce queue (max 16 pending key events)
     what_gpio_to_debounce = xQueueCreate(1, sizeof(char));
     keydebounce = xQueueCreate(1, sizeof(bool));
-
-    xTaskCreate(debounce_task, "debounce_task", 4096, NULL, 2, NULL);
 }
 
 
