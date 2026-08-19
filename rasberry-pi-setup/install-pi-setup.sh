@@ -1,6 +1,12 @@
 #!/bin/bash
 # Install Pi SoftAP + Hub (live / clips / Drive upload)
 # Run this on the Pi: sudo ./install-pi-setup.sh
+#
+# Env:
+#   SKIP_APT=1          skip apt-get
+#   FORCE=1             continue even if preflight finds leftover-state problems
+#   PI_BOOT_INSTALL=1   called from pi-setup-boot.sh (do not stop ourselves)
+#   START_SETUP=1       after install, start pi-setup (may SoftAP / DEV-wipe)
 
 set -e
 
@@ -9,18 +15,34 @@ PI_HOME="/home/koushik"
 # Canonical git clone on the Pi (boot + CI pull from here).
 PI_REPO_DIR="${PI_REPO_DIR:-$PI_HOME/apps/Home-Security}"
 
-echo "=== Installing Pi SoftAP + Hub ==="
-echo "Git clone: $PI_REPO_DIR"
-
 if [ "$EUID" -ne 0 ]; then
     echo "Please run as root: sudo ./install-pi-setup.sh"
     exit 1
 fi
 
+# shellcheck source=pi-preflight.sh
+if [ -f "$SCRIPT_DIR/pi-preflight.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/pi-preflight.sh"
+    preflight_collect
+    preflight_print_bar
+    if [ "${PI_BOOT_INSTALL:-0}" != "1" ]; then
+        preflight_fail_if_blocking
+        preflight_fix
+        preflight_collect
+        preflight_print_bar
+    else
+        echo "PI_BOOT_INSTALL=1 — skip service stop (boot script is the parent)"
+    fi
+fi
+
+echo "=== Installing Pi SoftAP + Hub ==="
+echo "Git clone: $PI_REPO_DIR"
+
 echo "Installing dependencies..."
 if [ "${SKIP_APT:-0}" != "1" ]; then
     apt-get update
-    apt-get install -y python3 python3-pip python3-flask jq ffmpeg git
+    apt-get install -y python3 python3-pip python3-flask jq ffmpeg git whiptail
 else
     echo "SKIP_APT=1 — not running apt-get"
 fi
@@ -38,6 +60,16 @@ cp "$SCRIPT_DIR/pi-setup-dev.sh" "$PI_HOME/"
 cp "$SCRIPT_DIR/pi-setup-prod.sh" "$PI_HOME/"
 chmod +x "$PI_HOME/pi-setup-boot.sh" "$PI_HOME/pi-setup-dev.sh" \
          "$PI_HOME/pi-setup-prod.sh" "$PI_HOME/pi-setup-lib.sh"
+if [ -f "$SCRIPT_DIR/choose-version.sh" ]; then
+    cp "$SCRIPT_DIR/choose-version.sh" "$PI_HOME/choose-version.sh"
+    chmod +x "$PI_HOME/choose-version.sh"
+    chown koushik:koushik "$PI_HOME/choose-version.sh"
+fi
+if [ -f "$SCRIPT_DIR/pi-preflight.sh" ]; then
+    cp "$SCRIPT_DIR/pi-preflight.sh" "$PI_HOME/pi-preflight.sh"
+    chmod +x "$PI_HOME/pi-preflight.sh"
+    chown koushik:koushik "$PI_HOME/pi-preflight.sh"
+fi
 chown koushik:koushik "$PI_HOME/pi-setup-api.py" "$PI_HOME/pi-setup-boot.sh" \
     "$PI_HOME/pi-setup-lib.sh" "$PI_HOME/pi-setup-dev.sh" "$PI_HOME/pi-setup-prod.sh"
 
@@ -142,10 +174,22 @@ fi
 echo ""
 echo "✓ Installation complete!"
 echo ""
+if [ "${PI_BOOT_INSTALL:-0}" != "1" ]; then
+    if [ "${START_SETUP:-0}" = "1" ]; then
+        echo "START_SETUP=1 — starting pi-setup.service (SoftAP / DEV wipe possible)"
+        systemctl start pi-setup.service
+    else
+        if type preflight_start_right_service >/dev/null 2>&1; then
+            preflight_start_right_service
+        fi
+    fi
+fi
+echo ""
 echo "Layout on Pi:"
 echo "  SoftAP gate:  $PI_HOME/pi-setup-boot.sh + pi-setup-api.py"
 echo "  Hub package:  $PI_HOME/pi_hub/  (live + clips + Drive)"
 echo "  Data:         $PI_HOME/homesecurity/"
+echo "  Branch UI:    $PI_HOME/choose-version.sh  (fetch + checkout + reinstall)"
 echo ""
 echo "Boot rule:"
 echo "  git pull pie-dev-testing, then:"
@@ -154,9 +198,9 @@ echo "         → Drive token + Wi‑Fi → join home LAN → pi-hub"
 echo "    PROD → home Wi‑Fi if configured, else SoftAP"
 echo ""
 echo "Next steps:"
-echo "  1. Reboot: sudo reboot"
-echo "  2. SoftAP if needed → configure Wi‑Fi → reboot or wait for next boot hub start"
-echo "  3. Health: curl http://${STATIC_IP}:4000/health"
+echo "  Switch branch: $PI_HOME/choose-version.sh"
+echo "  Health:        curl http://${STATIC_IP}:4000/health"
+echo "  Reboot only if you want SoftAP / DEV wipe: sudo reboot"
 echo ""
 echo "Logs:"
 echo "  SoftAP:  tail -f /var/log/pi-setup.log"

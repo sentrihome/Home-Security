@@ -43,7 +43,7 @@ if [ -d "$REPO_DIR/.git" ]; then
         SETUP_DIR="$REPO_DIR/rasberry-pi-setup"
         if [ -f "$SETUP_DIR/install-pi-setup.sh" ]; then
             log "Reinstalling from repo (SKIP_APT=1)"
-            SKIP_APT=1 "$SETUP_DIR/install-pi-setup.sh" >>"$LOG_FILE" 2>&1 \
+            PI_BOOT_INSTALL=1 SKIP_APT=1 "$SETUP_DIR/install-pi-setup.sh" >>"$LOG_FILE" 2>&1 \
                 || log "WARNING: install-pi-setup.sh failed"
         fi
     else
