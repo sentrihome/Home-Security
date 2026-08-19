@@ -127,6 +127,20 @@ def clips_cache():
     return jsonify({"clips": clips.list_cached()})
 
 
+@app.route("/clips/file/<filename>", methods=["GET"])
+def clips_file(filename: str):
+    """Stream a local cached mp4 (LAN). Names must match clip-*.mp4."""
+    if not filename.startswith("clip-") or not filename.endswith(".mp4"):
+        return jsonify({"error": "invalid clip name"}), 400
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return jsonify({"error": "invalid clip name"}), 400
+    config.CLIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = config.CLIP_CACHE_DIR / filename
+    if not path.is_file():
+        return jsonify({"error": "not found"}), 404
+    return send_from_directory(config.CLIP_CACHE_DIR, filename, mimetype="video/mp4")
+
+
 @app.route("/hls/<path:filename>", methods=["GET"])
 def hls_file(filename: str):
     config.HLS_DIR.mkdir(parents=True, exist_ok=True)

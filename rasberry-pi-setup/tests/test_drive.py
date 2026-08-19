@@ -227,7 +227,23 @@ class AuthCodeExchangeTest(DriveTestCase):
             )
 
         self.assertFalse(result["ok"])
-        self.assertIn("access_type=offline", result["hint"])
+        self.assertIn("one-time", result["hint"])
+
+    def test_refresh_token_skips_spent_auth_code(self):
+        def fake_http(url, method="GET", headers=None, data=None, timeout=30):
+            raise AssertionError("must not exchange auth_code when refresh_token is present")
+
+        with patch("pi_hub.drive._http_json", side_effect=fake_http):
+            result = drive.store_token(
+                refresh_token="1//rt-already",
+                auth_code="4/already-used",
+                email="a@b.c",
+                client_id="cid",
+                client_secret="sec",
+            )
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(drive.load_token()["refresh_token"], "1//rt-already")
 
 
 if __name__ == "__main__":

@@ -51,6 +51,20 @@ interface WifiNetwork {
 const STEP_LABELS = ['Google', 'Pi Wi-Fi', 'Drive', 'ESP32'];
 const ESP_STEP_LABELS = ['Connect', 'Wi-Fi', 'Permanent', 'Random', 'Module'];
 
+function formatPiError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  try {
+    const parsed = JSON.parse(raw) as { error?: string; hint?: string };
+    const err = (parsed.error || '').replace(/&#39;/g, "'").trim();
+    const hint = (parsed.hint || '').trim();
+    if (err && hint) return `${err} — ${hint}`;
+    if (err) return err;
+  } catch {
+    /* not JSON */
+  }
+  return raw;
+}
+
 /**
  * Connection tools: Google, Pi Wi-Fi/Drive/camera, ESP pairing.
  * Every step stays available so you can redo a single link without resetting all.
@@ -156,13 +170,19 @@ export default function SetupScreen() {
       throw new Error('Sign in with Google again so the app can send a Drive token over LAN.');
     }
     const handoff = await piApi.authDrive(
-      {
-        email: session.email,
-        client_id: clientId,
-        client_secret: clientSecret,
-        ...(refresh ? { refresh_token: refresh } : {}),
-        ...(serverAuthCode ? { server_auth_code: serverAuthCode } : {}),
-      },
+      refresh
+        ? {
+            email: session.email,
+            client_id: clientId,
+            client_secret: clientSecret,
+            refresh_token: refresh,
+          }
+        : {
+            email: session.email,
+            client_id: clientId,
+            client_secret: clientSecret,
+            server_auth_code: serverAuthCode,
+          },
       baseUrl
     );
     if (handoff && typeof handoff === 'object' && 'ok' in handoff && handoff.ok === false) {
@@ -238,9 +258,7 @@ export default function SetupScreen() {
           );
         } catch (handoffErr) {
           setSetupStatus(
-            `WiFi saved, but Drive handoff failed: ${
-              handoffErr instanceof Error ? handoffErr.message : 'unknown'
-            }. Sign in with Google, then verify on LAN.`
+            `WiFi saved, but Drive handoff failed: ${formatPiError(handoffErr)}. Sign in with Google, then verify on LAN.`
           );
         }
       } else {
@@ -340,9 +358,7 @@ export default function SetupScreen() {
       }
       setDriveStatus(`Drive token stored on ${label}.${extra}`);
     } catch (error) {
-      setDriveStatus(
-        error instanceof Error ? `Drive handoff failed: ${error.message}` : 'Drive handoff failed'
-      );
+      setDriveStatus(`Drive handoff failed: ${formatPiError(error)}`);
     } finally {
       setVerifying(false);
     }

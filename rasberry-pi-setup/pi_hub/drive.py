@@ -11,6 +11,7 @@ as the same signed-in Google user (architecture §17 / §18).
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import mimetypes
@@ -159,7 +160,7 @@ def store_token(
     )
     folder_name = folder_name or existing.get("folder_name") or config.DRIVE_FOLDER_NAME
 
-    if auth_code:
+    if auth_code and not refresh_token:
         if not client_id or not client_secret:
             return {
                 "ok": False,
@@ -172,6 +173,8 @@ def store_token(
             return exchanged
         refresh_token = exchanged["refresh_token"]
         email = email or exchanged.get("email") or ""
+    elif auth_code and refresh_token:
+        log.info("Ignoring auth_code; phone already sent a refresh_token")
 
     if not refresh_token:
         return {"ok": False, "error": "refresh_token (or auth_code) required"}
@@ -229,12 +232,12 @@ def _google_error(parsed: dict | list | str, fallback: str) -> str:
     if isinstance(parsed, dict):
         err = parsed.get("error")
         if isinstance(err, dict):
-            return err.get("message") or fallback
+            return html.unescape(err.get("message") or fallback)
         desc = parsed.get("error_description")
         if err and desc:
-            return f"{err}: {desc}"
+            return html.unescape(f"{err}: {desc}")
         if err:
-            return str(err)
+            return html.unescape(str(err))
     return fallback
 
 
@@ -265,10 +268,18 @@ def _exchange_auth_code(
     if status != 200 or not isinstance(parsed, dict) or not parsed.get("refresh_token"):
         err = _google_error(parsed, "auth code exchange failed")
         log.warning("Drive auth_code exchange failed: %s", err)
+        hint = (
+            "Google auth codes are one-time. Sign in with Google again, then Send Drive token once."
+        )
+        if "policy" in err.lower() or "keeping apps secure" in err.lower():
+            hint = (
+                "Google rejected a custom redirect. The phone must send a refresh_token "
+                "(not a browser redirect). Do not set redirect URIs like homesecurity://oauth."
+            )
         return {
             "ok": False,
             "error": err,
-            "hint": "Need access_type=offline and prompt=consent or Google will not issue a refresh_token",
+            "hint": hint,
         }
     email = ""
     access = parsed.get("access_token")

@@ -188,6 +188,16 @@ export const piApi = {
       baseUrl: baseUrl ?? getPiBaseUrl(),
     }),
 
+  clipsCache: (baseUrl?: string) =>
+    request<{
+      clips?: { name: string; path?: string; size?: number; mtime?: number }[];
+    }>('/clips/cache', { baseUrl: baseUrl ?? getPiBaseUrl() }),
+
+  clipFileUrl: (name: string, baseUrl?: string) => {
+    const root = (baseUrl ?? getPiBaseUrl()).replace(/\/$/, '');
+    return `${root}/clips/file/${encodeURIComponent(name)}`;
+  },
+
   /** Register Android FCM device token with the Pi. */
   registerFcm: (
     body: { token: string; platform: 'android' },

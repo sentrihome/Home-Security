@@ -82,7 +82,7 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
     );
   }
 
-  return { accessToken, refreshToken, serverAuthCode, email };
+  return { accessToken, refreshToken, serverAuthCode: refreshToken ? undefined : serverAuthCode, email };
 }
 
 async function exchangeServerAuthCode(
@@ -118,6 +118,16 @@ export async function signOutGoogle(): Promise<void> {
   } catch {
     // Ignore — local session clear still proceeds.
   }
+}
+
+/** Fresh Google access token for Drive list/play (same account as sign-in). */
+export async function getDriveAccessToken(): Promise<string> {
+  ensureConfigured();
+  const tokens = await GoogleSignin.getTokens();
+  if (!tokens.accessToken) {
+    throw new Error('Google access token missing — sign in again.');
+  }
+  return tokens.accessToken;
 }
 
 export function formatGoogleSignInError(error: unknown): string {
