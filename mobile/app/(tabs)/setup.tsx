@@ -16,6 +16,12 @@ import { cloudApi, piApi } from '@/lib/api';
 import { DEFAULT_PI_HOST, PI_SOFTAP_BASE_URL } from '@/lib/config';
 import * as esp from '@/lib/esp';
 import {
+  formatGoogleSignInError,
+  isGoogleSignInReady,
+  signInWithGoogle,
+  signOutGoogle,
+} from '@/lib/googleAuth';
+import {
   PERMANENT_PASS_ALLOWED,
   PERMANENT_PASS_LENGTH,
   generateOtp,
@@ -40,10 +46,11 @@ const STEP_LABELS = ['Pi Wi-Fi', 'ESP32', 'Done'];
 const ESP_STEP_LABELS = ['Connect', 'Wi-Fi', 'Permanent', 'Random', 'Module'];
 
 /**
- * Setup wizard: Pi SoftAP first, then ESP SoftAP pairing, plus cloud link.
+ * Connection tools: Google, Pi Wi-Fi/Drive/camera, ESP pairing.
+ * Every step stays available so you can redo a single link without resetting all.
  */
 export default function SetupScreen() {
-  const { isLoggedIn, session, cloudBaseUrl } = useAuth();
+  const { isLoggedIn, session, signIn, signOut, cloudBaseUrl } = useAuth();
   const {
     currentStep,
     setCurrentStep,
@@ -86,6 +93,9 @@ export default function SetupScreen() {
   const [disarmTime, setDisarmTime] = useState('');
   const [debugStatus, setDebugStatus] = useState('');
   const [debugBusy, setDebugBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleStatus, setGoogleStatus] = useState('');
+  const googleReady = isGoogleSignInReady();
 
   useEffect(() => {
     if (currentStep > 0) setPiSetupDone(true);
@@ -102,6 +112,46 @@ export default function SetupScreen() {
     })();
   }, []);
 
+  async function handleGoogleSignIn() {
+    setGoogleBusy(true);
+    setGoogleStatus('');
+    try {
+      const { accessToken, refreshToken, email } = await signInWithGoogle();
+      await signIn({ token: accessToken, refreshToken, email });
+      setGoogleStatus(`Signed in as ${email}`);
+    } catch (e) {
+      setGoogleStatus(formatGoogleSignInError(e));
+    } finally {
+      setGoogleBusy(false);
+    }
+  }
+
+  async function handleGoogleSignOut() {
+    await signOutGoogle();
+    await signOut();
+    setGoogleStatus('');
+  }
+
+  async function sendDriveTokenToPi(baseUrl: string) {
+    if (!session?.email || !session.refreshToken) {
+      throw new Error('Sign in with Google first (refresh token required).');
+    }
+    const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim();
+    const webClientSecret = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_SECRET?.trim();
+    const handoff = await piApi.authDrive(
+      {
+        email: session.email,
+        refresh_token: session.refreshToken,
+        ...(webClientId ? { client_id: webClientId } : {}),
+        ...(webClientSecret ? { client_secret: webClientSecret } : {}),
+      },
+      baseUrl
+    );
+    if (handoff && typeof handoff === 'object' && 'ok' in handoff && handoff.ok === false) {
+      throw new Error(handoff.error || 'Pi rejected Drive token');
+    }
+  }
+
   async function scanNetworks() {
     setSetupMode('scanning');
     setSetupStatus('Scanning for networks...');
@@ -117,9 +167,11 @@ export default function SetupScreen() {
       }
 
       const data = await response.json();
-      setNetworks(data.networks || []);
+      const list = Array.isArray(data.networks) ? data.networks : [];
+      list.sort((a: WifiNetwork, b: WifiNetwork) => (b.signal ?? 0) - (a.signal ?? 0));
+      setNetworks(list);
       setSetupMode('credentials');
-      setSetupStatus('');
+      setSetupStatus(list.length ? `${list.length} networks found` : 'No networks found');
     } catch (error) {
       setSetupStatus(
         error instanceof Error
@@ -158,10 +210,27 @@ export default function SetupScreen() {
       const host = (data.static_ip as string | undefined) || DEFAULT_PI_HOST;
       setPendingPiHost(host);
       setPiWifiPassword('');
+
+      if (session?.refreshToken) {
+        setSetupStatus('WiFi saved. Sending Google Drive token to Pi…');
+        try {
+          await sendDriveTokenToPi(PI_SOFTAP_BASE_URL);
+          setSetupStatus(
+            `Token stored. Pi will join ${host}. Reconnect this phone to home Wi-Fi, then verify.`
+          );
+        } catch (handoffErr) {
+          setSetupStatus(
+            `WiFi saved, but Drive handoff failed: ${
+              handoffErr instanceof Error ? handoffErr.message : 'unknown'
+            }. Sign in with Google, then verify on LAN.`
+          );
+        }
+      } else {
+        setSetupStatus(
+          `WiFi configured. Sign in with Google, then open http://10.42.0.1:4000/dev on the Pi hotspot, or verify after the Pi is on ${host}.`
+        );
+      }
       setSetupMode('verify');
-      setSetupStatus(
-        `WiFi configured. Pi will use ${host}. Reconnect this phone to your home Wi-Fi, then verify.`
-      );
     } catch (error) {
       setSetupStatus(error instanceof Error ? error.message : 'Configuration failed');
       setSetupMode('credentials');
@@ -169,19 +238,32 @@ export default function SetupScreen() {
   }
 
   async function verifyPiOnLan() {
+    const host = setupMode === 'verify' ? pendingPiHost : piHost;
+    await handoffToPi(host);
+  }
+
+  async function handoffToPi(host: string) {
     setVerifying(true);
-    setSetupStatus(`Checking ${pendingPiHost}:4000…`);
+    setSetupStatus(`Checking ${host}:4000…`);
     try {
-      const baseUrl = `http://${pendingPiHost}:4000`;
+      const baseUrl = `http://${host}:4000`;
       await piApi.health(baseUrl);
-      await setPiHost(pendingPiHost);
+      if (session?.refreshToken) {
+        setSetupStatus('Sending Google Drive token to Pi…');
+        await sendDriveTokenToPi(baseUrl);
+      }
+      await setPiHost(host);
       setPiSetupDone(true);
       advanceFromPiSetup();
-      setSetupStatus(`Pi reachable at ${pendingPiHost}.`);
+      setSetupStatus(
+        session?.refreshToken
+          ? `Pi OK at ${host}. Drive token stored.`
+          : `Pi reachable at ${host}.`
+      );
     } catch (error) {
       setSetupStatus(
         error instanceof Error
-          ? `Not reachable yet: ${error.message}. Make sure the phone is back on home Wi-Fi and try again.`
+          ? `Verify/handoff failed: ${error.message}`
           : 'Verification failed'
       );
     } finally {
@@ -205,16 +287,49 @@ export default function SetupScreen() {
     setEspAcknowledged(false);
   }
 
-  function resetPiSetup() {
+  function redoPiWifi() {
     setSetupMode('instructions');
     setNetworks([]);
     setSelectedNetwork('');
     setPiWifiPassword('');
     setSetupStatus('');
     setPendingPiHost(DEFAULT_PI_HOST);
-    setPiSetupDone(false);
-    resetEspState();
     setCurrentStep(0);
+  }
+
+  async function sendDriveToCurrentPi() {
+    setVerifying(true);
+    setSetupStatus(`Sending Drive token to ${piBaseUrl}…`);
+    try {
+      await sendDriveTokenToPi(piBaseUrl);
+      setSetupStatus(`Drive token stored on ${piHost}.`);
+    } catch (error) {
+      setSetupStatus(
+        error instanceof Error ? `Drive handoff failed: ${error.message}` : 'Drive handoff failed'
+      );
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function startPiCamera() {
+    setVerifying(true);
+    setSetupStatus(`Starting camera on ${piBaseUrl}…`);
+    try {
+      const result = await piApi.start('app', '', piBaseUrl);
+      if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
+        throw new Error(result.error || 'Publisher failed');
+      }
+      setSetupStatus('Camera publisher started. Open Live to watch.');
+    } catch (error) {
+      setSetupStatus(
+        error instanceof Error
+          ? `Start camera failed: ${error.message}`
+          : 'Start camera failed'
+      );
+    } finally {
+      setVerifying(false);
+    }
   }
 
   async function runEspStep0() {
@@ -414,38 +529,38 @@ export default function SetupScreen() {
   return (
     <Screen
       title="Device setup"
-      subtitle="Connect the Pi to home Wi-Fi first, then configure the ESP32.">
-      <StepIndicator current={currentStep} />
+      subtitle="Redo any connection at any time — Google, Pi, Drive, camera, or ESP.">
+      <StepIndicator current={currentStep} onSelect={setCurrentStep} />
 
       <StepCard
         n={1}
-        title="Connect Pi to home Wi-Fi"
-        subtitle="Join HomeSecurity-Setup, send credentials, then verify the Pi on your LAN."
-        active={currentStep === 0}
+        title="Pi: Google, Wi-Fi, Drive, camera"
+        subtitle="Join HomeSecurity-Setup for Wi-Fi, or use LAN/Tailscale for Drive and camera."
         done={piSetupDone}>
-        {setupMode === 'instructions' && (
+        {isLoggedIn ? (
           <>
-            <Text style={styles.hint}>
-              Join the Pi hotspot in phone settings:{'\n\n'}
-              • SSID: <Text style={styles.bold}>HomeSecurity-Setup</Text>
-              {'\n'}• Password: <Text style={styles.bold}>setup1234</Text>
-              {'\n\n'}
-              Then return here and scan.
-            </Text>
-            <PrimaryButton label="Scan networks" onPress={scanNetworks} />
-            {piSetupDone ? null : (
-              <PrimaryButton
-                label="Skip — Pi already on LAN"
-                variant="secondary"
-                onPress={async () => {
-                  await setPiHost(DEFAULT_PI_HOST);
-                  setPiSetupDone(true);
-                  advanceFromPiSetup();
-                }}
-              />
-            )}
+            <Text style={styles.hint}>Google: {session?.email}</Text>
+            <PrimaryButton
+              label="Sign out of Google"
+              variant="secondary"
+              onPress={handleGoogleSignOut}
+            />
           </>
+        ) : (
+          <PrimaryButton
+            label="Sign in with Google"
+            loading={googleBusy}
+            disabled={!googleReady}
+            onPress={handleGoogleSignIn}
+          />
         )}
+        {googleStatus ? <Text style={styles.hint}>{googleStatus}</Text> : null}
+
+        <Text style={styles.hint}>
+          Pi hotspot:{' '}
+          <Text style={styles.bold}>HomeSecurity-Setup</Text> /{' '}
+          <Text style={styles.bold}>setup1234</Text>
+        </Text>
 
         {setupMode === 'scanning' && (
           <View style={styles.center}>
@@ -456,7 +571,9 @@ export default function SetupScreen() {
 
         {setupMode === 'credentials' && (
           <>
-            <Text style={styles.hint}>Select your home Wi-Fi network:</Text>
+            <Text style={styles.hint}>
+              Select your home Wi-Fi network ({networks.length} found):
+            </Text>
             <RNView style={styles.networkList}>
               {networks.map((net) => (
                 <TouchableOpacity
@@ -501,22 +618,38 @@ export default function SetupScreen() {
         )}
 
         {setupMode === 'verify' && (
-          <>
-            <Text style={styles.hint}>
-              Expected Pi IP: <Text style={styles.bold}>{pendingPiHost}</Text>
-            </Text>
-            <PrimaryButton
-              label="Verify Pi on home network"
-              loading={verifying}
-              onPress={verifyPiOnLan}
-            />
-            <PrimaryButton
-              label="Start over"
-              variant="secondary"
-              onPress={resetPiSetup}
-            />
-          </>
+          <Text style={styles.hint}>
+            Expected Pi IP: <Text style={styles.bold}>{pendingPiHost}</Text>
+          </Text>
         )}
+
+        <PrimaryButton label="Scan Pi hotspot networks" onPress={scanNetworks} />
+        <PrimaryButton
+          label="Verify Pi on home / Tailscale"
+          loading={verifying}
+          onPress={verifyPiOnLan}
+        />
+        <PrimaryButton
+          label="Send Drive token to Pi"
+          loading={verifying}
+          disabled={!isLoggedIn}
+          onPress={sendDriveToCurrentPi}
+        />
+        <PrimaryButton
+          label="Start camera"
+          loading={verifying}
+          onPress={startPiCamera}
+        />
+        <PrimaryButton
+          label="Skip — Pi already on LAN"
+          variant="secondary"
+          onPress={async () => {
+            await setPiHost(DEFAULT_PI_HOST);
+            setPiSetupDone(true);
+            advanceFromPiSetup();
+          }}
+        />
+        <PrimaryButton label="Redo Pi Wi-Fi form" variant="secondary" onPress={redoPiWifi} />
 
         {setupStatus ? (
           <Text
@@ -532,13 +665,20 @@ export default function SetupScreen() {
       <StepCard
         n={2}
         title="Configure ESP32"
-        subtitle={`Pi master backend: ${piHost} (${piBaseUrl}). Join ESP32_Master_Config, then complete pairing.`}
-        active={currentStep === 1}
-        done={espAcknowledged}
-        alwaysShowBody={currentStep === 1}>
-        <Text style={styles.hint}>
-          Sub-steps: {ESP_STEP_LABELS.map((l, i) => (i === espStep ? `[${l}]` : l)).join(' → ')}
-        </Text>
+        subtitle={`Pi: ${piHost} (${piBaseUrl}). Open any sub-step — you do not have to finish the previous one.`}
+        done={espAcknowledged}>
+        <RNView style={styles.chipRow}>
+          {ESP_STEP_LABELS.map((label, index) => (
+            <TouchableOpacity
+              key={label}
+              onPress={() => setEspStep(index as EspStep)}
+              style={[styles.chip, espStep === index && styles.chipActive]}>
+              <Text style={[styles.chipLabel, espStep === index && styles.chipLabelActive]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </RNView>
 
         {espStatus ? (
           <View style={styles.statusCard}>
@@ -548,9 +688,8 @@ export default function SetupScreen() {
 
         {espStep === 0 ? (
           <PrimaryButton
-            label={connectionOk ? 'Connected' : 'Test ESP connection'}
+            label={connectionOk ? 'Test ESP connection again' : 'Test ESP connection'}
             loading={espBusy}
-            disabled={connectionOk}
             onPress={runEspStep0}
           />
         ) : null}
@@ -564,7 +703,6 @@ export default function SetupScreen() {
               placeholderTextColor="#9ca3af"
               autoCapitalize="none"
               autoCorrect={false}
-              editable={!wifiCredsSent}
               style={styles.input}
             />
             <TextInput
@@ -574,13 +712,12 @@ export default function SetupScreen() {
               placeholderTextColor="#9ca3af"
               autoCapitalize="none"
               autoCorrect={false}
-              editable={!wifiCredsSent}
               style={styles.input}
             />
             <PrimaryButton
-              label={wifiCredsSent ? 'Sent' : 'Send Wi-Fi credentials'}
+              label={wifiCredsSent ? 'Send Wi-Fi credentials again' : 'Send Wi-Fi credentials'}
               loading={espBusy}
-              disabled={wifiCredsSent || !wifiSsid.trim() || !wifiPassword.trim()}
+              disabled={!wifiSsid.trim() || !wifiPassword.trim()}
               onPress={runEspStep1}
             />
           </>
@@ -595,7 +732,6 @@ export default function SetupScreen() {
               placeholderTextColor="#9ca3af"
               autoCapitalize="characters"
               autoCorrect={false}
-              editable={!permanentPassSent}
               style={styles.input}
             />
             <Text style={styles.helper}>
@@ -603,9 +739,11 @@ export default function SetupScreen() {
                 `${permanentPass.length}/${PERMANENT_PASS_LENGTH} characters (0-9, A-D, #, *)`}
             </Text>
             <PrimaryButton
-              label={permanentPassSent ? 'Saved' : 'Save permanent password'}
+              label={
+                permanentPassSent ? 'Save permanent password again' : 'Save permanent password'
+              }
               loading={espBusy}
-              disabled={permanentPassSent || !isValidPermanentPass(permanentPass)}
+              disabled={!isValidPermanentPass(permanentPass)}
               onPress={runEspStep2}
             />
           </>
@@ -621,39 +759,27 @@ export default function SetupScreen() {
             <PrimaryButton
               label="Generate"
               variant="secondary"
-              disabled={randomPassSent}
               onPress={onGenerateRandom}
             />
             <PrimaryButton
-              label={randomPassSent ? 'Sent & saved' : 'Send & save'}
+              label={randomPassSent ? 'Send & save again' : 'Send & save'}
               loading={espBusy}
-              disabled={randomPassSent || !randomPass}
+              disabled={!randomPass}
               onPress={runEspStep3}
             />
           </>
         ) : null}
 
-        {espStep === 4 ? (
+        {espStep === 4 || espStep === 5 ? (
           <PrimaryButton
-            label={modulePaired ? 'Paired' : 'Start pairing'}
+            label={modulePaired ? 'Pair module again' : 'Start pairing'}
             loading={espBusy}
-            disabled={modulePaired}
             onPress={runEspStep4}
           />
         ) : null}
-      </StepCard>
 
-      {currentStep === 2 ? (
-        <View style={styles.doneCard}>
-          <Text style={styles.doneTitle}>Setup complete</Text>
-          <Text style={styles.doneBody}>
-            Pi is saved at {piHost}. ESP main and module are configured. Reconnect the
-            phone to your home Wi-Fi to use the app normally. You can still link a cloud
-            device ID below.
-          </Text>
-          <PrimaryButton label="Re-run Pi setup" variant="secondary" onPress={resetPiSetup} />
-        </View>
-      ) : null}
+        <PrimaryButton label="Reset ESP form only" variant="secondary" onPress={resetEspState} />
+      </StepCard>
 
       <View style={styles.divider} />
 
@@ -740,14 +866,25 @@ export default function SetupScreen() {
   );
 }
 
-function StepIndicator({ current }: { current: WizardStep }) {
+function StepIndicator({
+  current,
+  onSelect,
+}: {
+  current: WizardStep;
+  onSelect: (step: WizardStep) => void;
+}) {
   return (
     <View style={styles.indicatorRow}>
       {STEP_LABELS.map((label, index) => {
         const isDone = index < current;
         const isActive = index === current;
         return (
-          <View key={label} style={styles.indicatorCell}>
+          <TouchableOpacity
+            key={label}
+            style={styles.indicatorCell}
+            onPress={() => onSelect(index as WizardStep)}
+            accessibilityRole="button"
+            accessibilityLabel={`Go to ${label}`}>
             <View
               style={[
                 styles.indicatorDot,
@@ -757,7 +894,7 @@ function StepIndicator({ current }: { current: WizardStep }) {
               <Text style={styles.indicatorNumber}>{index + 1}</Text>
             </View>
             <Text style={styles.indicatorLabel}>{label}</Text>
-          </View>
+          </TouchableOpacity>
         );
       })}
     </View>
@@ -768,35 +905,19 @@ type StepCardProps = {
   n: number;
   title: string;
   subtitle: string;
-  active: boolean;
   done: boolean;
-  alwaysShowBody?: boolean;
   children: ReactNode;
 };
 
-function StepCard({
-  n,
-  title,
-  subtitle,
-  active,
-  done,
-  alwaysShowBody,
-  children,
-}: StepCardProps) {
-  const showBody = alwaysShowBody || (active && !done);
+function StepCard({ n, title, subtitle, done, children }: StepCardProps) {
   return (
-    <View
-      style={[
-        styles.card,
-        done && styles.cardDone,
-        !active && !done && styles.cardPending,
-      ]}>
+    <View style={styles.card}>
       <Text style={styles.section}>
         {n}. {title}
         {done ? '  ✓' : ''}
       </Text>
-      {active || done ? <Text style={styles.hint}>{subtitle}</Text> : null}
-      {showBody ? <View style={styles.cardBody}>{children}</View> : null}
+      <Text style={styles.hint}>{subtitle}</Text>
+      <View style={styles.cardBody}>{children}</View>
     </View>
   );
 }
@@ -846,14 +967,33 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#d1d5db',
   },
-  cardDone: {
-    opacity: 0.85,
-  },
-  cardPending: {
-    opacity: 0.5,
-  },
   cardBody: {
     gap: 10,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#f8fafc',
+  },
+  chipActive: {
+    backgroundColor: '#1d4ed8',
+    borderColor: '#1d4ed8',
+  },
+  chipLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  chipLabelActive: {
+    color: '#fff',
   },
   section: {
     fontSize: 17,
@@ -888,11 +1028,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   networkList: {
-    maxHeight: 200,
     borderWidth: 1,
     borderColor: '#d1d5db',
     borderRadius: 10,
-    overflow: 'hidden',
   },
   networkItem: {
     padding: 12,
@@ -939,24 +1077,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1,
     color: '#0f172a',
-  },
-  doneCard: {
-    gap: 10,
-    padding: 20,
-    borderRadius: 12,
-    backgroundColor: '#ecfdf5',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#a7f3d0',
-  },
-  doneTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#065f46',
-  },
-  doneBody: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#065f46',
   },
   divider: {
     height: StyleSheet.hairlineWidth,

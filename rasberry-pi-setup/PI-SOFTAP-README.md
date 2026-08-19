@@ -8,7 +8,8 @@ Automatic WiFi setup for Raspberry Pi using SoftAP (Access Point) mode.
 2. **Phone joins hotspot** → app discovers Pi at `10.42.0.1`
 3. **App sends credentials** → `POST /wifi` with home WiFi SSID/password
 4. **Pi switches to home WiFi** → saves credentials, connects as normal client
-5. **Future boots** → Pi automatically joins home WiFi (no SoftAP)
+5. **Future boots (prod)** → Pi joins home WiFi (no SoftAP)
+6. **DEV boots (`pie-dev-testing`)** → git pull, wipe wifi + Drive token + clip cache, SoftAP. After Google token **and** home WiFi creds, join LAN and start the hub.
 
 ## Architecture
 
@@ -54,11 +55,13 @@ Shared camera: **one** ffmpeg publisher → MediaMTX; live uses WebRTC, clips re
 
 | Method | Path | Module |
 |--------|------|--------|
-| GET | `/health` | hub (`mode: hub`, `publishing`, `webrtc`, `detection`) |
+| GET | `/health` | hub (`mode: hub`, `publishing`, `webrtc`, `detection`, `drive`) |
+| GET | `/` | redirect to `/dev` |
+| GET | `/dev` | Drive sign-in portal (Google OAuth on the Pi) |
 | POST | `/start` `/stop` | `pi_hub.live` (WebRTC session; publisher stays) |
 | POST | `/motion` | `pi_hub.events` → `pi_hub.clips` (RTSP record) → `pi_hub.drive` |
-| POST | `/auth/drive` | `pi_hub.drive` |
-| GET | `/clips/cache` | local clip list (debug) |
+| POST / GET / DELETE | `/auth/drive` | phone OAuth handoff; status; disconnect |
+| GET | `/clips/cache` | local clip list (debug — app lists Drive, not this) |
 | POST | `/detect/start` `/detect/stop` | `pi_hub.detect` (OpenCV DNN on the shared RTSP feed) |
 | GET | `/detect/status` | detector state, counters, last detection |
 
@@ -91,6 +94,35 @@ Decision logic is unit tested without hardware:
 ```bash
 cd rasberry-pi-setup && python3 -m unittest discover -s tests -v
 ```
+
+### Google Drive uploads
+
+Clips upload to the user's Drive once the phone completes OAuth and
+`POST /auth/drive` (LAN or Tailscale only). Token is Fernet-encrypted at
+`homesecurity/drive_token.json.enc`. Files land in an app-created **SentriHome**
+folder (`drive.file` scope — not shared publicly).
+
+Phone contract + Expo template: repo root `DOCUMENTATION.md`.
+
+Until the app ships OAuth, open the Pi’s **dev portal** and sign in there:
+
+```
+http://192.168.0.236:4000/dev
+http://100.66.51.106:4000/dev
+```
+
+Save a Google Cloud **Web application** client, add the callback URI shown on
+the page, then **Connect Google Drive**. Clips then upload to a `SentriHome`
+folder.
+
+```bash
+# after the phone (or curl) has posted credentials:
+curl -s http://192.168.0.236:4000/auth/drive   # { linked, email, last_upload, error }
+curl -s -X POST http://192.168.0.236:4000/motion
+# Drive → SentriHome / clip-*.mp4
+```
+
+Re-deploy needs `pip3 install -r requirements.txt` (now includes `cryptography`).
 
 ## API Endpoints
 

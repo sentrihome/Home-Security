@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install Pi SoftAP + Hub (live / clips / Drive stubs)
+# Install Pi SoftAP + Hub (live / clips / Drive upload)
 # Run this on the Pi: sudo ./install-pi-setup.sh
 
 set -e
@@ -15,8 +15,12 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "Installing dependencies..."
-apt-get update
-apt-get install -y python3 python3-pip python3-flask jq ffmpeg
+if [ "${SKIP_APT:-0}" != "1" ]; then
+    apt-get update
+    apt-get install -y python3 python3-pip python3-flask jq ffmpeg git
+else
+    echo "SKIP_APT=1 — not running apt-get"
+fi
 
 if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
     pip3 install --break-system-packages -r "$SCRIPT_DIR/requirements.txt" 2>/dev/null \
@@ -26,8 +30,13 @@ fi
 echo "Copying SoftAP files..."
 cp "$SCRIPT_DIR/pi-setup-api.py" "$PI_HOME/"
 cp "$SCRIPT_DIR/pi-setup-boot.sh" "$PI_HOME/"
-chmod +x "$PI_HOME/pi-setup-boot.sh"
-chown koushik:koushik "$PI_HOME/pi-setup-api.py" "$PI_HOME/pi-setup-boot.sh"
+cp "$SCRIPT_DIR/pi-setup-lib.sh" "$PI_HOME/"
+cp "$SCRIPT_DIR/pi-setup-dev.sh" "$PI_HOME/"
+cp "$SCRIPT_DIR/pi-setup-prod.sh" "$PI_HOME/"
+chmod +x "$PI_HOME/pi-setup-boot.sh" "$PI_HOME/pi-setup-dev.sh" \
+         "$PI_HOME/pi-setup-prod.sh" "$PI_HOME/pi-setup-lib.sh"
+chown koushik:koushik "$PI_HOME/pi-setup-api.py" "$PI_HOME/pi-setup-boot.sh" \
+    "$PI_HOME/pi-setup-lib.sh" "$PI_HOME/pi-setup-dev.sh" "$PI_HOME/pi-setup-prod.sh"
 
 echo "Copying pi_hub package..."
 rm -rf "$PI_HOME/pi_hub"
@@ -135,9 +144,10 @@ echo "  Hub package:  $PI_HOME/pi_hub/  (live + clips + Drive)"
 echo "  Data:         $PI_HOME/homesecurity/"
 echo ""
 echo "Boot rule:"
-echo "  unconfigured → SoftAP + setup API :4000"
-echo "  home Wi‑Fi   → pi-hub :4000 (GET /health, /start, /stop, /motion, /auth/drive)"
-echo "                 detection: /detect/start, /detect/stop, /detect/status"
+echo "  git pull pie-dev-testing, then:"
+echo "    DEV  (branch pie-dev-testing) → wipe creds/token/cache → SoftAP"
+echo "         → Drive token + Wi‑Fi → join home LAN → pi-hub"
+echo "    PROD → home Wi‑Fi if configured, else SoftAP"
 echo ""
 echo "Next steps:"
 echo "  1. Reboot: sudo reboot"

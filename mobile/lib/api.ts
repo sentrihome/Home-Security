@@ -135,4 +135,47 @@ export const piApi = {
       method: 'POST',
       baseUrl: baseUrl ?? getPiBaseUrl(),
     }),
+
+  /**
+   * Hand Google Drive credentials to the Pi (LAN / Tailscale only).
+   * Phone person: see DOCUMENTATION.md "Phone: Google Drive OAuth".
+   */
+  authDrive: (
+    body: {
+      refresh_token?: string;
+      auth_code?: string;
+      server_auth_code?: string;
+      redirect_uri?: string;
+      code_verifier?: string;
+      email?: string;
+      client_id?: string;
+      client_secret?: string;
+      folder_name?: string;
+    },
+    baseUrl?: string
+  ) =>
+    request<{ ok?: boolean; email?: string; linked?: boolean; error?: string }>(
+      '/auth/drive',
+      {
+        method: 'POST',
+        body,
+        baseUrl: baseUrl ?? getPiBaseUrl(),
+      }
+    ),
+
+  driveStatus: (baseUrl?: string) =>
+    request<{
+      linked?: boolean;
+      email?: string | null;
+      folder_name?: string;
+      folder_id?: string | null;
+      last_upload?: unknown;
+      error?: string | null;
+    }>('/auth/drive', { baseUrl: baseUrl ?? getPiBaseUrl() }),
+
+  unlinkDrive: (baseUrl?: string) =>
+    request<{ ok?: boolean; linked?: boolean }>('/auth/drive', {
+      method: 'DELETE',
+      baseUrl: baseUrl ?? getPiBaseUrl(),
+    }),
 };

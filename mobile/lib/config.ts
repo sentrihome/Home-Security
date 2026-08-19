@@ -7,17 +7,19 @@
  *
  * Android emulator → host machine: use 10.0.2.2 instead of localhost
  * iOS simulator → host machine: localhost works
- * Physical device: LAN IP or Tailscale host/IP
+ * Physical device: home LAN first, Tailscale if you are away
  */
 import { Platform } from 'react-native';
 
 const localhost = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 
-/** Prefer Tailscale so Live works off home Wi‑Fi; LAN still works if set in Settings. */
-export const DEFAULT_PI_HOST = '100.66.51.106';
-
-/** Static Pi LAN address after SoftAP provisioning (optional Settings override). */
+/** Static Pi LAN address after SoftAP provisioning. Default for the app. */
 export const PI_LAN_HOST = '192.168.0.236';
+
+/** Tailscale IP — use from Settings when not on home Wi‑Fi. */
+export const TAILSCALE_PI_HOST = '100.66.51.106';
+
+export const DEFAULT_PI_HOST = PI_LAN_HOST;
 
 /** SoftAP gateway while the phone is on HomeSecurity-Setup. */
 export const PI_SOFTAP_BASE_URL = 'http://10.42.0.1:4000';

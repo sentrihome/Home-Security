@@ -13,6 +13,9 @@ ssh "${PI_USER}@${PI_IP}" "mkdir -p /tmp/rasberry-pi-setup/systemd /tmp/rasberry
 
 scp "$SCRIPT_DIR/pi-setup-api.py" \
     "$SCRIPT_DIR/pi-setup-boot.sh" \
+    "$SCRIPT_DIR/pi-setup-lib.sh" \
+    "$SCRIPT_DIR/pi-setup-dev.sh" \
+    "$SCRIPT_DIR/pi-setup-prod.sh" \
     "$SCRIPT_DIR/install-pi-setup.sh" \
     "$SCRIPT_DIR/requirements.txt" \
     "${PI_USER}@${PI_IP}:/tmp/rasberry-pi-setup/"
@@ -26,7 +29,7 @@ echo ""
 echo "=== Running installer on Pi ==="
 ssh "${PI_USER}@${PI_IP}" << 'REMOTE'
 cd /tmp/rasberry-pi-setup
-chmod +x install-pi-setup.sh pi-setup-boot.sh scripts/fetch-detection-model.sh
+chmod +x install-pi-setup.sh pi-setup-boot.sh pi-setup-dev.sh pi-setup-prod.sh pi-setup-lib.sh scripts/fetch-detection-model.sh
 python3 -m unittest discover -s tests -q || echo "WARNING: detection unit tests failed"
 sudo ./install-pi-setup.sh
 REMOTE

@@ -1,0 +1,100 @@
+# Deploy SoftAP + pi_hub to the Raspberry Pi on every relevant push.
+#
+# Flow: GitHub Actions → (optional Tailscale) → SSH → git fetch/checkout → install → restart hub
+#
+# Required repo secrets:
+#   PI_SSH_HOST   — Tailscale MagicDNS / 100.x / LAN IP reachable from the runner
+#   PI_SSH_USER   — e.g. koushik
+#   PI_SSH_KEY    — private key (ed25519) whose public key is in authorized_keys on the Pi
+#
+# Optional:
+#   TS_AUTHKEY    — Tailscale auth key (reusable, tagged). If set, runner joins your tailnet first.
+#   PI_REPO_DIR   — clone path on Pi (default /home/koushik/Home-Security)
+#
+# One-time Pi bootstrap: see rasberry-pi-setup/PI-SOFTAP-README.md → "CI deploy"
+
+name: Pi pull & deploy
+
+on:
+  push:
+    branches: [pie-dev-testing]
+    paths:
+      - "rasberry-pi-setup/**"
+      - ".github/workflows/pi-deploy.yml"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy (empty = this workflow SHA)"
+        required: false
+        default: ""
+
+concurrency:
+  group: pi-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Pull & deploy on Pi
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+      PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+      PI_SSH_USER: ${{ secrets.PI_SSH_USER }}
+      PI_REPO_DIR: ${{ secrets.PI_REPO_DIR }}
+
+    steps:
+      - name: Check required secrets
+        env:
+          PI_SSH_KEY: ${{ secrets.PI_SSH_KEY }}
+        run: |
+          missing=0
+          [ -n "$PI_SSH_HOST" ] || { echo "::error::Missing secret PI_SSH_HOST"; missing=1; }
+          [ -n "$PI_SSH_USER" ] || { echo "::error::Missing secret PI_SSH_USER"; missing=1; }
+          [ -n "$PI_SSH_KEY" ] || { echo "::error::Missing secret PI_SSH_KEY"; missing=1; }
+          exit "$missing"
+
+      - name: Join Tailscale
+        if: ${{ env.TS_AUTHKEY != '' }}
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ env.TS_AUTHKEY }}
+          hostname: github-actions-pi-deploy
+
+      - name: Start ssh-agent and add key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.PI_SSH_KEY }}
+
+      - name: Trust Pi host key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H "$PI_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null \
+            || echo "::warning::ssh-keyscan failed — ensure PI_SSH_HOST is reachable (set TS_AUTHKEY?)"
+
+      - name: Pull commit and deploy on Pi
+        env:
+          DEPLOY_REF: ${{ github.event.inputs.ref || github.sha }}
+        run: |
+          REPO_DIR="${PI_REPO_DIR:-/home/koushik/Home-Security}"
+          echo "Deploying ref=$DEPLOY_REF → ${PI_SSH_USER}@${PI_SSH_HOST}:${REPO_DIR}"
+
+          # Checkout first so this commit's ci-pull-deploy.sh exists, then run it.
+          ssh -o StrictHostKeyChecking=accept-new \
+              -o ConnectTimeout=30 \
+              -o ServerAliveInterval=15 \
+              "${PI_SSH_USER}@${PI_SSH_HOST}" \
+              "set -euo pipefail
+               REPO_DIR='${REPO_DIR}'
+               REF='${DEPLOY_REF}'
+               test -d \"\$REPO_DIR/.git\" || {
+                 echo \"ERROR: clone missing at \$REPO_DIR — bootstrap per PI-SOFTAP-README.md\"
+                 exit 1
+               }
+               cd \"\$REPO_DIR\"
+               git fetch --prune origin
+               git checkout --force --detach \"\$REF\"
+               export REPO_DIR SKIP_APT=1
+               exec bash rasberry-pi-setup/scripts/ci-pull-deploy.sh \"\$REF\"
+              "

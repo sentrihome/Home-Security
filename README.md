@@ -39,6 +39,7 @@ So the branch name will be: type-firstname-task
 | [16](#16-pi--s3-link-confirmed-endpoints-transport-tbd) | Confirmed Pi↔S3 endpoints; transport still TBD |
 | [17](#17-clips-pi-cache--google-drive) | Clip capture, cache, upload, playback |
 | [18](#18-google-token-handoff) | OAuth refresh token to Pi |
+| [18.1](#181-what-the-pi-needs-phone--pi-contract) | Locked JSON contract for the phone handoff |
 | [19](#19-motion-event-pipeline-partially-resolved) | Camera confirmed Pi-only; alert-pipeline scope still open |
 | [20](#20-arm--disarm-state-machine) | State ownership, authorization, entry/exit, sensor behavior |
 | [21](#21-out-of-scope) | Explicit non-goals |
@@ -430,17 +431,19 @@ Everything downstream depends on this link:
 ## 17. Clips: Pi Cache → Google Drive
 
 1. User signs into Google in the phone app (`access_type=offline`, `drive.file` scope).
-2. App sends the refresh token + email to the Pi over LAN or Tailscale (§13's path).
-3. On an event: Pi writes the clip to local cache, then uploads to Drive with a refreshed access token.
+2. App sends the refresh token (or auth code) + OAuth client id/secret + email to the Pi over LAN or Tailscale (§18).
+3. On an event: Pi writes the clip to local cache (`homesecurity/clips/clip-*.mp4`), then uploads to Drive with a refreshed access token into an app-created **SentriHome** folder.
 4. App lists/plays clips via Drive (the user's own session) — not via the Tailscale video tunnel.
-5. Pi may prune the local cache after successful upload (retention policy TBD).
+5. Pi may prune the local cache after successful upload (retention policy TBD, §22 #9).
+
+Pi implementation (`rasberry-pi-setup/pi_hub/drive.py`) is live: motion/detection already call `drive.upload_clip()`. Uploads stay private (`drive.file` only; no "anyone with the link"). They no-op with a loud error until the phone completes §18.
 
 ### Test targets
 
 - Clip appears in Pi cache within budget after a triggering event.
-- Clip appears in the user's Drive folder after upload.
+- Clip appears in the user's Drive folder (`SentriHome`) after upload.
 - Clips remain listable/playable from Drive with Tailscale fully off (cellular only) — this path must not depend on Tailscale.
-- Revoked Google access → next upload fails loudly, app prompts re-auth (not a silent drop).
+- Revoked Google access → next upload fails loudly (`invalid_grant` on `GET /auth/drive`), app prompts re-auth (not a silent drop).
 
 **Failure modes:** missing `prompt=consent` → no refresh token issued. Upload quota / Drive API errors. App signed into a different Google account than the one whose token lives on the Pi.
 
@@ -456,7 +459,7 @@ sequenceDiagram
   participant Drive
   App->>Google: OAuth offline consent, drive.file scope
   Google-->>App: refresh_token + email
-  App->>Pi: POST token over LAN or Tailscale
+  App->>Pi: POST /auth/drive (LAN or Tailscale)
   Pi->>Pi: Store refresh_token encrypted at rest
   Pi->>Drive: Upload clip with refreshed access_token
   App->>Drive: List/play clips as the signed-in user
@@ -468,8 +471,27 @@ Rules:
 - Store on the Pi **encrypted at rest**; never write tokens to app logs or setup logs.
 - Scope limited to `drive.file` — only files the app itself creates/manages, not full Drive access.
 - Provide a revoke/re-auth path in Settings if uploads start failing.
+- The OAuth **client_id and client_secret travel with the refresh token**. A refresh token cannot be used by a different Google Cloud client than the one that issued it, so the phone and the Pi must share one Web-application OAuth client.
 
 This is the same "phone-mediated secret handoff to a persistent device" pattern as the sensor-network PSK (§7, §11) and, once designed, the §16 auth token — worth eventually converging on one shared primitive instead of three independently-built ones (§22).
+
+Phone implementation guide (Expo template, Cloud Console steps, Settings UX): **[DOCUMENTATION.md — Phone: Google Drive OAuth](DOCUMENTATION.md#phone-google-drive-oauth-and-token-handoff)**.
+
+### 18.1 What the Pi needs (phone → Pi contract)
+
+`POST /auth/drive` on port 4000. JSON, one of:
+
+| Field | Required | Notes |
+|---|---|---|
+| `refresh_token` | Shape A | Phone already exchanged the auth code |
+| `auth_code` (alias `server_auth_code`) | Shape B | Pi exchanges it; send `code_verifier` if PKCE was used |
+| `code_verifier` | Shape B + PKCE | Expo AuthSession default |
+| `redirect_uri` | Shape B | Must match the Google Cloud authorized URI (default `homesecurity://oauth`) |
+| `client_id` | **always** | Same Web client the phone used |
+| `client_secret` | **always** | Same Web client the phone used |
+| `email` | recommended | Pi fetches from userinfo if omitted |
+
+`GET /auth/drive` returns `{ linked, email, folder_name, folder_id, last_upload, error }` and never the token. `DELETE /auth/drive` forgets it. `/health` includes the same object under `drive`.
 
 ---
 
@@ -614,6 +636,7 @@ Consolidated list, roughly in priority order for what blocks further design vs. 
 
 | Date | Change |
 |---|---|
+| 2026-08-18 | **Pi Drive upload shipped.** `pi_hub/drive.py` stores the phone-handed refresh token encrypted at rest (Fernet), refreshes access tokens, creates a `SentriHome` folder, and uploads event clips. `/auth/drive` is now GET/POST/DELETE; `/health` exposes `drive` status without secrets. Locked the phone→Pi JSON contract in §18.1 (`client_id`/`client_secret` required — refresh tokens are bound to the issuing OAuth client). Phone implementation guide: `DOCUMENTATION.md`. |
 | 2026-08-13 | **Camera-based motion detection shipped, superseding the §19 "monitoring-only" decision.** `pi_hub/detect.py` runs MobileNet-SSD via OpenCV DNN against the shared MediaMTX RTSP feed (not `/dev/video0` — the single-publisher rule in §19/`camera.py` still holds) and raises person-gated events through the new `pi_hub/events.py`, the same pipeline `POST /motion` uses. Rewrote §19 around two independent triggers instead of one; updated §2 and the component table, which both still claimed the camera did no detection. Notable: this trigger is entirely local to the Pi, so it works with §16 still unresolved — the reason it shipped ahead of the sensor path. New open item in §19: the two triggers do not corroborate each other. Weights are sha256-verified at fetch time, not vendored. |
 | 2026-08-02 | Consolidated ESP32 hardware architecture and Local-First Storyboard into a single full architecture document. Flagged §16 (ESP↔Pi link) and §19 (camera/motion ownership) as the two unresolved cross-cutting gaps. |
 | 2026-08-02 | Confirmed: no camera on any ESP32 (S3 or WROOM) — camera is Pi-attached only. Updated §2 and §19 accordingly; narrowed §19 to the remaining open question of whether ESP32 sensor events also feed the alert pipeline. |

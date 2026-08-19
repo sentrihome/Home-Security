@@ -80,7 +80,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!session?.token) return;
     const me = await cloudApi.me(session.token, cloudBaseUrl);
     if (me.email) {
-      const next = { token: session.token, email: me.email };
+      const next = {
+        token: session.token,
+        email: me.email,
+        refreshToken: session.refreshToken,
+      };
       setSession(next);
       await saveSession(next);
     }

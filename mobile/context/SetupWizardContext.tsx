@@ -10,7 +10,7 @@ import {
 
 import {
   DEFAULT_PI_HOST,
-  PI_LAN_HOST,
+  TAILSCALE_PI_HOST,
   computePiBaseUrl,
   normalizePiHost,
   setPiBaseUrlOverride,
@@ -31,10 +31,10 @@ type SetupWizardContextValue = {
 
 const SetupWizardContext = createContext<SetupWizardContextValue | null>(null);
 
-/** Migrate old LAN-only default to Tailscale so Live works off home Wi‑Fi. */
+/** Prefer LAN. Treat empty or the old Tailscale default as “use LAN”. */
 function resolveStoredPiHost(stored: string | null | undefined): string {
   const normalized = normalizePiHost(stored ?? '');
-  if (!normalized || normalized === PI_LAN_HOST) {
+  if (!normalized || normalized === TAILSCALE_PI_HOST) {
     return DEFAULT_PI_HOST;
   }
   return normalized;
@@ -57,8 +57,7 @@ export function SetupWizardProvider({ children }: { children: ReactNode }) {
         setPiBaseUrlOverride(computePiBaseUrl(host));
         if (stored) {
           setCurrentStep(1);
-          // Persist migration away from LAN-only default
-          if (normalizePiHost(stored) === PI_LAN_HOST && host === DEFAULT_PI_HOST) {
+          if (normalizePiHost(stored) === TAILSCALE_PI_HOST && host === DEFAULT_PI_HOST) {
             await savePiHost(host);
           }
         }

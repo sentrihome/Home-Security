@@ -57,8 +57,10 @@ Do **not** run the lab publish script while `pi_hub` publisher is active — bot
 curl -s http://192.168.0.236:4000/health
 # open browser on :8889/cam
 curl -s -X POST http://192.168.0.236:4000/motion
-curl -s http://192.168.0.236:4000/clips/cache
+# curl -s http://192.168.0.236:4000/clips/cache
 curl -s http://192.168.0.236:4000/detect/status   # running, frames_sampled, last_detection
+curl -s http://192.168.0.236:4000/auth/drive      # linked? last_upload? (after phone OAuth)
 # sudo fuser -v /dev/video0  → should show only the publisher ffmpeg
 # walk in front of the camera → events_raised increments, a clip lands in clips/
+# if Drive is linked, the same clip appears in Drive folder SentriHome
 ```

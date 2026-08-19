@@ -9,7 +9,7 @@ import { Screen } from '@/components/ui/Screen';
 import { useAuth } from '@/context/AuthContext';
 import { useSetupWizard } from '@/context/SetupWizardContext';
 import { cloudApi } from '@/lib/api';
-import { config } from '@/lib/config';
+import { config, PI_LAN_HOST, TAILSCALE_PI_HOST } from '@/lib/config';
 
 export default function SettingsScreen() {
   const { session, isLoggedIn, cloudBaseUrl, setCloudBaseUrl, signOut } = useAuth();
@@ -89,19 +89,37 @@ export default function SettingsScreen() {
       <View style={styles.card}>
         <Text style={styles.section}>Pi host / IP</Text>
         <Text style={styles.hint}>
-          Tailscale IP (recommended) or LAN IP of the Pi. API uses port 4000; live video uses
-          port 8889 on the same host.
+          Home LAN first ({PI_LAN_HOST}). Switch to Tailscale ({TAILSCALE_PI_HOST}) when you
+          are away. API uses port 4000; live video uses port 8889 on the same host.
         </Text>
         <TextInput
           value={piHostDraft}
           onChangeText={setPiHostDraft}
-          placeholder="100.66.51.106"
+          placeholder={PI_LAN_HOST}
           autoCapitalize="none"
           autoCorrect={false}
           style={styles.input}
         />
         <Text style={styles.meta}>Resolved: {piBaseUrl}</Text>
         <PrimaryButton label="Save Pi host" onPress={savePiHostUrl} />
+        <PrimaryButton
+          label={`Use LAN (${PI_LAN_HOST})`}
+          variant="secondary"
+          onPress={async () => {
+            setPiHostDraft(PI_LAN_HOST);
+            await setPiHost(PI_LAN_HOST);
+            setMessage('Using home LAN.');
+          }}
+        />
+        <PrimaryButton
+          label={`Use Tailscale (${TAILSCALE_PI_HOST})`}
+          variant="secondary"
+          onPress={async () => {
+            setPiHostDraft(TAILSCALE_PI_HOST);
+            await setPiHost(TAILSCALE_PI_HOST);
+            setMessage('Using Tailscale.');
+          }}
+        />
       </View>
 
       <View style={styles.card}>

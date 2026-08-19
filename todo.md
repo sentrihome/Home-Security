@@ -138,9 +138,9 @@ Mostly Storyboard-side work; cross-check against §14.
 
 ## Phase 8 — Clips (Drive)
 
-- [ ] Implement Google OAuth in the app (`access_type=offline`, `drive.file` scope) and the token handoff to the Pi (§18) — LAN/Tailscale only, encrypted at rest on the Pi, never logged.
+- [ ] Implement Google OAuth in the app (`access_type=offline`, `drive.file` scope) and the token handoff to the Pi (§18) — LAN/Tailscale only. **Phone guide:** `DOCUMENTATION.md`. Pi already stores the token encrypted and uploads.
 
-- [ ] Implement Pi-side cache-then-upload pipeline (§17).
+- [x] Implement Pi-side cache-then-upload pipeline (§17). `pi_hub/drive.py` uploads to a `SentriHome` folder once `/auth/drive` has credentials.
 
 - [ ] Implement app-side clip listing/playback directly from Drive (not via Tailscale — confirmed this path must work on cellular with Tailscale off).
 

@@ -16,6 +16,13 @@ DATA_DIR = HOME / "homesecurity"
 HLS_DIR = DATA_DIR / "hls"
 CLIP_CACHE_DIR = DATA_DIR / "clips"
 DRIVE_TOKEN_PATH = DATA_DIR / "drive_token.json.enc"
+DRIVE_KEY_PATH = DATA_DIR / ".drive_key"
+DRIVE_FOLDER_NAME = "SentriHome"
+# Default redirect used when the phone sends an auth_code without redirect_uri.
+# Must match the URI registered on the Google Cloud OAuth client the phone uses.
+DRIVE_OAUTH_REDIRECT_URI = "homesecurity://oauth"
+# Web-client id/secret for the /dev portal (LAN sign-in). Not the user token.
+DRIVE_OAUTH_CLIENT_PATH = DATA_DIR / "drive_oauth_client.json"
 WIFI_CREDENTIALS_FILE = HOME / "wifi-credentials.json"
 LOG_DIR = DATA_DIR / "logs"
 

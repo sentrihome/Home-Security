@@ -174,9 +174,9 @@ Open Setup tab, follow on-screen instructions.
 - [x] Boot automation (systemd)
 - [x] SoftAP → hub handoff + `pi_hub` barebones (`/health` `/start` `/stop` `/motion` `/auth/drive`)
 - [x] OpenCV object detection on the shared RTSP feed (`pi_hub.detect`, MobileNet-SSD, person-gated)
-- [ ] Real ffmpeg HLS in `pi_hub.live`
-- [ ] Real clip record + Drive upload (`pi_hub.clips` / `pi_hub.drive`)
-- [ ] Encrypt Drive token at rest
+- [x] Real clip record (`pi_hub.clips`) + Drive upload (`pi_hub.drive`)
+- [x] Encrypt Drive token at rest
+- [ ] Real ffmpeg HLS in `pi_hub.live` (live is WebRTC; HLS is leftover)
 - [ ] mDNS discovery (`homesecurity.local`) instead of hardcoded IP
 
 ## Layout
@@ -192,11 +192,12 @@ rasberry-pi-setup/
 │   ├── clips.py              # local clip cache
 │   ├── detect.py             # OpenCV DNN person detection on RTSP
 │   ├── events.py             # shared motion pipeline (clip → Drive)
-│   └── drive.py              # token store + upload stub
+│   └── drive.py              # encrypted token store + Drive upload
 ├── scripts/
 │   └── fetch-detection-model.sh   # sha256-verified MobileNet-SSD weights
 ├── tests/
-│   └── test_detect.py        # detection gating / cooldown / backoff
+│   ├── test_detect.py        # detection gating / cooldown / backoff
+│   └── test_drive.py         # token store + mocked Drive upload
 ├── systemd/
 │   ├── pi-setup.service
 │   └── pi-hub.service

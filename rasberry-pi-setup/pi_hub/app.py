@@ -6,12 +6,16 @@ Endpoints:
   POST /start          → live WebRTC session (shared MediaMTX feed)
   POST /stop           → end live session (publisher stays for clips)
   POST /motion         → record clip from same RTSP feed → Drive upload
-  POST /auth/drive
+  POST /auth/drive     → phone hands off Google refresh token / auth code
+  GET  /auth/drive     → linked? email? last upload (never the token)
+  DELETE /auth/drive   → forget stored Drive credentials
   GET  /hls/<file>     → legacy HLS dir (optional)
   GET  /clips/cache
   POST /detect/start   → start OpenCV object detection on the shared feed
   POST /detect/stop    → stop object detection
   GET  /detect/status  → detector state, counters, last detection
+  GET  /               → redirect to /dev
+  GET  /dev            → Drive sign-in portal (LAN / Tailscale)
 """
 
 from __future__ import annotations
@@ -19,9 +23,12 @@ from __future__ import annotations
 import logging
 import sys
 
+from pathlib import Path
+
 from flask import Flask, jsonify, request, send_from_directory
 
 from . import camera, clips, config, detect, drive, events, live
+from .dev_routes import _portal_page, register_dev_routes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,7 +36,11 @@ logging.basicConfig(
 )
 log = logging.getLogger("pi_hub")
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=str(Path(__file__).resolve().parent / "templates"),
+)
+register_dev_routes(app)
 
 
 @app.route("/health", methods=["GET"])
@@ -46,6 +57,7 @@ def health():
             "publisher": pub,
             "webrtc": config.webrtc_urls(),
             "drive_token": drive.has_token(),
+            "drive": drive.status(),
             "detection": detect.status(),
             "last_event": events.last_event(),
         }
@@ -95,15 +107,18 @@ def detect_status():
     return jsonify(detect.status())
 
 
-@app.route("/auth/drive", methods=["POST"])
-def auth_drive():
-    """Phone hands off Google refresh token (LAN / Tailscale only)."""
-    body = request.get_json(silent=True) or {}
-    refresh_token = body.get("refresh_token") or body.get("refreshToken")
-    email = body.get("email")
-    result = drive.store_token(refresh_token=refresh_token or "", email=email or "")
-    status = 200 if result.get("ok") else 400
-    return jsonify(result), status
+@app.route("/dev/actions/motion", methods=["POST"])
+def dev_test_clip():
+    result = events.handle_motion(source="dev-portal")
+    if not result.get("ok"):
+        return _portal_page(False, result.get("error") or "Clip failed"), 500
+    upload = result.get("upload") or {}
+    if upload.get("ok"):
+        return _portal_page(True, f"Clip {result.get('clip')} uploaded to Drive.")
+    return _portal_page(
+        False,
+        f"Clip saved locally ({result.get('clip')}) but Drive upload failed: {upload.get('error')}",
+    )
 
 
 @app.route("/clips/cache", methods=["GET"])

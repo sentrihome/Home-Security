@@ -1,6 +1,8 @@
 export type AuthSession = {
   token: string;
   email: string;
+  /** Google refresh token handed to the Pi via POST /auth/drive. */
+  refreshToken?: string;
 };
 
 export type EventClip = {
