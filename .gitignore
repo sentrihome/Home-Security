@@ -6,6 +6,7 @@ mobile/dist/
 *.mp4
 *.ts
 !mobile/**/*.ts
+!web/**/*.ts
 .env
 credentials.json
 .DS_Store
