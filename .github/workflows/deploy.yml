@@ -23,12 +23,12 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-        working-directory: web
+        working-directory: docs
       - run: npm run build
-        working-directory: web
+        working-directory: docs
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: web/dist
+          path: docs/dist
 
   deploy:
     runs-on: ubuntu-latest
