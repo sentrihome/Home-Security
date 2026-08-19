@@ -3,14 +3,15 @@
 # Run on the Pi:  ./scripts/ci-pull-deploy.sh [git-ref]
 #
 # Env:
-#   REPO_DIR   — clone path (default: /home/koushik/Home-Security)
+#   REPO_DIR   — clone path (default: /home/koushik/apps/Home-Security)
 #   SKIP_APT   — set to 1 to skip apt-get (default for CI)
 #   SKIP_HEALTH — set to 1 to skip curl /health check
 
 set -euo pipefail
 
-REPO_DIR="${REPO_DIR:-/home/koushik/Home-Security}"
-REF="${1:-}"
+REPO_DIR="${REPO_DIR:-/home/koushik/apps/Home-Security}"
+TRACK_BRANCH="${TRACK_BRANCH:-pie-dev-testing}"
+REF="${1:-$TRACK_BRANCH}"
 SKIP_APT="${SKIP_APT:-1}"
 HUB_READY="/home/koushik/homesecurity/.hub-ready"
 SETUP_DIR="$REPO_DIR/rasberry-pi-setup"
@@ -31,15 +32,12 @@ git fetch --prune origin
 
 if [ -n "$REF" ]; then
     log "Checking out $REF"
-    git checkout --force --detach "$REF"
-else
-    BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
-    if [ "$BRANCH" = "HEAD" ]; then
-        BRANCH="main"
+    if git show-ref --verify --quiet "refs/remotes/origin/$REF" 2>/dev/null; then
+        git checkout -B "$REF" "origin/$REF"
+        git pull --ff-only origin "$REF" || true
+    else
+        git checkout --force --detach "$REF"
     fi
-    log "Fast-forward pull origin/$BRANCH"
-    git checkout "$BRANCH" 2>/dev/null || git checkout -B "$BRANCH" "origin/$BRANCH"
-    git pull --ff-only origin "$BRANCH"
 fi
 
 log "HEAD=$(git rev-parse --short HEAD) $(git log -1 --oneline)"

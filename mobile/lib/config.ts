@@ -1,19 +1,25 @@
 /**
  * Backend URLs for the Home Security stack.
  *
- * Cloud backend (port 3001): events, clips, auth, HLS playlist
- * Pi backend (port 4000): start/stop stream, motion trigger
+ * Cloud backend (port 3001): events, clips, auth
+ * Pi backend (port 4000): start/stop live, motion, health
+ * Live video: MediaMTX WebRTC on port 8889 (`/cam`), same host as Pi API
  *
  * Android emulator → host machine: use 10.0.2.2 instead of localhost
  * iOS simulator → host machine: localhost works
- * Physical device: use your LAN IP or ngrok URL
+ * Physical device: home LAN first, Tailscale if you are away
  */
 import { Platform } from 'react-native';
 
 const localhost = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 
-/** Known static Pi LAN address after SoftAP provisioning. */
-export const DEFAULT_PI_HOST = '192.168.0.236';
+/** Static Pi LAN address after SoftAP provisioning. Default for the app. */
+export const PI_LAN_HOST = '192.168.0.236';
+
+/** Tailscale IP — use from Settings when not on home Wi‑Fi. */
+export const TAILSCALE_PI_HOST = '100.66.51.106';
+
+export const DEFAULT_PI_HOST = PI_LAN_HOST;
 
 /** SoftAP gateway while the phone is on HomeSecurity-Setup. */
 export const PI_SOFTAP_BASE_URL = 'http://10.42.0.1:4000';

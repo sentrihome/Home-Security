@@ -95,27 +95,16 @@ A complete **WiFi provisioning system** for Raspberry Pi using SoftAP (Access Po
 
 ## Installation
 
-### From your laptop (preferred)
+### On the Pi:
 
 ```bash
-cd rasberry-pi-setup
-./deploy-to-pi.sh
-ssh koushik@192.168.0.236 'sudo reboot'
-curl http://192.168.0.236:4000/health   # mode: hub after Wi‑Fi
-```
-
-See **PI-SOFTAP-README.md** for hub-only iterate (`scp pi_hub` + `systemctl restart pi-hub`) and full SoftAP ↔ hub boot rules (D20).
-
-### On the Pi directly
-
-```bash
-cd /path/to/Home-Security/rasberry-pi-setup
+cd /path/to/Home-Security
 chmod +x install-pi-setup.sh
 sudo ./install-pi-setup.sh
 sudo reboot
 ```
 
-After reboot, unconfigured Pi SoftAP (`HomeSecurity-Setup`); configured Pi starts `pi_hub` on `:4000`.
+After reboot, Pi will be in SoftAP mode (`HomeSecurity-Setup`).
 
 ### On the Mobile App:
 
@@ -184,9 +173,10 @@ Open Setup tab, follow on-screen instructions.
 - [x] Mobile app provisioning UI
 - [x] Boot automation (systemd)
 - [x] SoftAP → hub handoff + `pi_hub` barebones (`/health` `/start` `/stop` `/motion` `/auth/drive`)
-- [ ] Real ffmpeg HLS in `pi_hub.live`
-- [ ] Real clip record + Drive upload (`pi_hub.clips` / `pi_hub.drive`)
-- [ ] Encrypt Drive token at rest
+- [x] OpenCV object detection on the shared RTSP feed (`pi_hub.detect`, MobileNet-SSD, person-gated)
+- [x] Real clip record (`pi_hub.clips`) + Drive upload (`pi_hub.drive`)
+- [x] Encrypt Drive token at rest
+- [ ] Real ffmpeg HLS in `pi_hub.live` (live is WebRTC; HLS is leftover)
 - [ ] mDNS discovery (`homesecurity.local`) instead of hardcoded IP
 
 ## Layout
@@ -197,11 +187,17 @@ rasberry-pi-setup/
 ├── pi-setup-boot.sh          # Gate: SoftAP vs start pi-hub
 ├── pi_hub/                   # Product hub after home Wi‑Fi
 │   ├── app.py                # One Flask process :4000
-│   ├── live.py               # ffmpeg HLS start/stop
+│   ├── camera.py             # sole owner of /dev/video0 → MediaMTX
+│   ├── live.py               # WebRTC session (HLS legacy)
 │   ├── clips.py              # local clip cache
-│   └── drive.py              # token store + upload stub
+│   ├── detect.py             # OpenCV DNN person detection on RTSP
+│   ├── events.py             # shared motion pipeline (clip → Drive)
+│   └── drive.py              # encrypted token store + Drive upload
 ├── scripts/
-│   └── ci-pull-deploy.sh     # git checkout + install (GitHub Actions)
+│   └── fetch-detection-model.sh   # sha256-verified MobileNet-SSD weights
+├── tests/
+│   ├── test_detect.py        # detection gating / cooldown / backoff
+│   └── test_drive.py         # token store + mocked Drive upload
 ├── systemd/
 │   ├── pi-setup.service
 │   └── pi-hub.service
@@ -210,19 +206,14 @@ rasberry-pi-setup/
 └── requirements.txt
 ```
 
-CI workflow (repo root): `.github/workflows/pi-deploy.yml`
-
 ## Quick Reference
 
 | What | Where | Command |
 |------|-------|---------|
-| Deploy from laptop | Repo | `cd rasberry-pi-setup && ./deploy-to-pi.sh` |
-| CI pull & deploy | GitHub | push `rasberry-pi-setup/**` → workflow **Pi pull & deploy** |
-| Hub health | LAN | `curl http://192.168.0.236:4000/health` |
-| SoftAP logs | Pi | `tail -f /var/log/pi-setup.log` |
-| Hub logs | Pi | `journalctl -u pi-hub -f` |
-| Reset to SoftAP | Pi | `sudo rm ~/wifi-credentials.json ~/homesecurity/.hub-ready && sudo reboot` |
-| Check SoftAP service | Pi | `systemctl status pi-setup.service` |
-| Check hub | Pi | `systemctl status pi-hub.service` |
-| SoftAP IP | Mobile | `http://10.42.0.1:4000` |
-| Hub IP | Mobile | `http://192.168.0.236:4000` |
+| Start SoftAP | Pi | `sudo nmcli connection up Hotspot` |
+| Stop SoftAP | Pi | `sudo nmcli connection down Hotspot` |
+| View logs | Pi | `tail -f /var/log/pi-setup.log` |
+| Reset config | Pi | `sudo rm /home/koushik/wifi-credentials.json && sudo reboot` |
+| Check service | Pi | `systemctl status pi-setup.service` |
+| Pi SoftAP IP | Mobile | `http://10.42.0.1:4000` |
+| Pi home IP | Mobile | `http://192.168.0.236:4000` |

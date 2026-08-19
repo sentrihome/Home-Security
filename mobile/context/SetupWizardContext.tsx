@@ -10,6 +10,7 @@ import {
 
 import {
   DEFAULT_PI_HOST,
+  TAILSCALE_PI_HOST,
   computePiBaseUrl,
   normalizePiHost,
   setPiBaseUrlOverride,
@@ -30,6 +31,15 @@ type SetupWizardContextValue = {
 
 const SetupWizardContext = createContext<SetupWizardContextValue | null>(null);
 
+/** Prefer LAN. Treat empty or the old Tailscale default as “use LAN”. */
+function resolveStoredPiHost(stored: string | null | undefined): string {
+  const normalized = normalizePiHost(stored ?? '');
+  if (!normalized || normalized === TAILSCALE_PI_HOST) {
+    return DEFAULT_PI_HOST;
+  }
+  return normalized;
+}
+
 export function SetupWizardProvider({ children }: { children: ReactNode }) {
   const [currentStep, setCurrentStep] = useState<WizardStep>(0);
   const [piHost, setPiHostState] = useState(DEFAULT_PI_HOST);
@@ -42,13 +52,14 @@ export function SetupWizardProvider({ children }: { children: ReactNode }) {
       try {
         const stored = await loadPiHost();
         if (cancelled) return;
+        const host = resolveStoredPiHost(stored);
+        setPiHostState(host);
+        setPiBaseUrlOverride(computePiBaseUrl(host));
         if (stored) {
-          const normalized = normalizePiHost(stored);
-          setPiHostState(normalized || DEFAULT_PI_HOST);
-          setPiBaseUrlOverride(computePiBaseUrl(normalized || DEFAULT_PI_HOST));
           setCurrentStep(1);
-        } else {
-          setPiBaseUrlOverride(computePiBaseUrl(DEFAULT_PI_HOST));
+          if (normalizePiHost(stored) === TAILSCALE_PI_HOST && host === DEFAULT_PI_HOST) {
+            await savePiHost(host);
+          }
         }
       } finally {
         if (!cancelled) setIsLoading(false);

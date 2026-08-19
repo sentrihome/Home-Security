@@ -1,7 +1,9 @@
 [Unit]
-Description=Pi Home Security Hub (live HLS + clips + Drive)
-After=network-online.target
+Description=Pi Home Security Hub (live WebRTC + clips + Drive)
+After=network-online.target mediamtx.service
 Wants=network-online.target
+# Prefer MediaMTX up before publisher starts
+Wants=mediamtx.service
 # Created by pi-setup-boot.sh only after home Wi‑Fi is up.
 ConditionPathExists=/home/koushik/homesecurity/.hub-ready
 

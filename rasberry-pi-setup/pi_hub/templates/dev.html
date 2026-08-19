@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SentriHome · Pi dev portal</title>
+    <style>
+      :root {
+        --bg: #0b0a09;
+        --card: #161412;
+        --ink: #f4efe6;
+        --muted: #a39a8c;
+        --line: #2b2824;
+        --accent: #e8c07a;
+        --ok: #8fca9a;
+        --bad: #e0897a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 16px/1.45 ui-sans-serif, system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      main {
+        max-width: 40rem;
+        margin: 0 auto;
+        padding: 2rem 1.25rem 4rem;
+      }
+      h1 { font-size: 1.4rem; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 0.35rem; }
+      .lede { color: var(--muted); margin: 0 0 1.5rem; font-size: 0.95rem; }
+      section {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 1.15rem 1.2rem;
+        margin-bottom: 1rem;
+      }
+      h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 0.75rem; }
+      label { display: block; font-size: 0.82rem; color: var(--muted); margin: 0.6rem 0 0.25rem; }
+      input {
+        width: 100%;
+        padding: 0.65rem 0.7rem;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: #0f0e0c;
+        color: var(--ink);
+        font: inherit;
+      }
+      button, .btn {
+        display: inline-block;
+        margin-top: 0.85rem;
+        margin-right: 0.4rem;
+        padding: 0.55rem 0.9rem;
+        border-radius: 8px;
+        border: 0;
+        background: var(--accent);
+        color: #1a1408;
+        font: 600 0.9rem/1 ui-sans-serif, system-ui, sans-serif;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      button.secondary, .btn.secondary { background: #2b2824; color: var(--ink); }
+      button.danger { background: #5c2e26; color: #f6d5ce; }
+      code, .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.78rem;
+        word-break: break-all;
+      }
+      .banner {
+        padding: 0.7rem 0.85rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        font-size: 0.92rem;
+      }
+      .banner.ok { background: #1a2b1e; color: var(--ok); }
+      .banner.bad { background: #2b1a18; color: var(--bad); }
+      .row { color: var(--muted); font-size: 0.92rem; margin: 0.2rem 0; }
+      .row b { color: var(--ink); font-weight: 600; }
+      .hint { color: var(--muted); font-size: 0.82rem; margin: 0.6rem 0 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>SentriHome · Pi dev portal</h1>
+      <p class="lede">
+        Sign in with Google on this Pi so event clips can upload to Drive.
+        Phone OAuth can replace this later. LAN / Tailscale only.
+      </p>
+
+      {% if message %}
+      <div class="banner {{ 'ok' if ok else 'bad' }}">{{ message }}</div>
+      {% endif %}
+
+      <section>
+        <h2>Drive status</h2>
+        <p class="row">Linked: <b>{{ 'yes' if drive.linked else 'no' }}</b></p>
+        <p class="row">Email: <b>{{ drive.email or '—' }}</b></p>
+        <p class="row">Folder: <b>{{ drive.folder_name or 'SentriHome' }}</b></p>
+        <p class="row">Last upload: <b>{{ last_upload or '—' }}</b></p>
+        {% if drive.error %}
+        <p class="row">Last error: <b>{{ drive.error }}</b></p>
+        {% endif %}
+        {% if drive.linked %}
+        <form method="post" action="{{ url_for('dev_disconnect') }}">
+          <button class="danger" type="submit">Disconnect Drive</button>
+        </form>
+        <form method="post" action="{{ url_for('dev_test_clip') }}">
+          <button class="secondary" type="submit">Record a test clip</button>
+        </form>
+        {% endif %}
+      </section>
+
+      <section>
+        <h2>1. Google OAuth client</h2>
+        <p class="hint">
+          Google Cloud → APIs → enable Drive API → OAuth client type
+          <b>Web application</b>. Add this exact redirect URI:
+        </p>
+        <p class="mono">{{ callback_uri }}</p>
+        <p class="hint">
+          If Google refuses a LAN <code>http://</code> URI, SSH tunnel
+          (<code>ssh -L 4000:127.0.0.1:4000 koushik@192.168.0.236</code>)
+          and open <code>http://localhost:4000/dev</code> after adding
+          <code>http://localhost:4000/dev/drive/callback</code> instead.
+          Or paste a refresh token below.
+        </p>
+        {% if client_suffix %}
+        <p class="row">Saved client id ends in <b>…{{ client_suffix }}</b></p>
+        {% else %}
+        <p class="row">No client saved yet.</p>
+        {% endif %}
+        <form method="post" action="{{ url_for('dev_save_client') }}">
+          <label for="client_id">Client ID</label>
+          <input id="client_id" name="client_id" autocomplete="off" spellcheck="false" required />
+          <label for="client_secret">Client secret</label>
+          <input id="client_secret" name="client_secret" type="password" autocomplete="off" required />
+          <button type="submit">Save client</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>2. Sign in with Google</h2>
+        <p class="hint">Opens Google consent with <code>drive.file</code> + offline access, then stores the refresh token encrypted on this Pi.</p>
+        <form method="post" action="{{ url_for('dev_drive_start') }}">
+          <button type="submit" {% if not client_suffix %}disabled{% endif %}>Connect Google Drive</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>Or paste a refresh token</h2>
+        <p class="hint">Use if Google will not accept an http LAN redirect. Same client as step 1.</p>
+        <form method="post" action="{{ url_for('dev_paste_token') }}">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" required />
+          <label for="refresh_token">Refresh token</label>
+          <input id="refresh_token" name="refresh_token" autocomplete="off" spellcheck="false" required />
+          <button type="submit">Store token</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

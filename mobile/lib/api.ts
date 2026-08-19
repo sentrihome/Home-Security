@@ -1,5 +1,5 @@
 import { config, getPiBaseUrl } from '@/lib/config';
-import type { EventClip, StreamStatus } from '@/types';
+import type { EventClip, LiveStartResponse, StreamStatus } from '@/types';
 
 export class ApiError extends Error {
   status: number;
@@ -114,11 +114,20 @@ export const cloudApi = {
 
 /** Pi backend (port 4000) */
 export const piApi = {
-  health: (baseUrl?: string) =>
-    request('/health', { baseUrl: baseUrl ?? getPiBaseUrl() }),
+  health: async (baseUrl?: string) => {
+    const base = baseUrl ?? getPiBaseUrl();
+    try {
+      return await request<Record<string, unknown>>('/health', { baseUrl: base });
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 404 || error.status === 405)) {
+        return await request<Record<string, unknown>>('/status', { baseUrl: base });
+      }
+      throw error;
+    }
+  },
 
   start: (type: string, value = '', baseUrl?: string) =>
-    request('/start', {
+    request<LiveStartResponse>('/start', {
       method: 'POST',
       body: { type, value },
       baseUrl: baseUrl ?? getPiBaseUrl(),
@@ -136,14 +145,46 @@ export const piApi = {
       baseUrl: baseUrl ?? getPiBaseUrl(),
     }),
 
-  /** Hand off Google refresh token to Pi (LAN / Tailscale only). */
+  /**
+   * Hand Google Drive credentials to the Pi (LAN / Tailscale only).
+   * Phone person: see DOCUMENTATION.md "Phone: Google Drive OAuth".
+   */
   authDrive: (
-    body: { email: string; refresh_token: string },
+    body: {
+      refresh_token?: string;
+      auth_code?: string;
+      server_auth_code?: string;
+      redirect_uri?: string;
+      code_verifier?: string;
+      email?: string;
+      client_id?: string;
+      client_secret?: string;
+      folder_name?: string;
+    },
     baseUrl?: string
   ) =>
-    request<{ ok?: boolean; email?: string; error?: string }>('/auth/drive', {
-      method: 'POST',
-      body,
+    request<{ ok?: boolean; email?: string; linked?: boolean; error?: string }>(
+      '/auth/drive',
+      {
+        method: 'POST',
+        body,
+        baseUrl: baseUrl ?? getPiBaseUrl(),
+      }
+    ),
+
+  driveStatus: (baseUrl?: string) =>
+    request<{
+      linked?: boolean;
+      email?: string | null;
+      folder_name?: string;
+      folder_id?: string | null;
+      last_upload?: unknown;
+      error?: string | null;
+    }>('/auth/drive', { baseUrl: baseUrl ?? getPiBaseUrl() }),
+
+  unlinkDrive: (baseUrl?: string) =>
+    request<{ ok?: boolean; linked?: boolean }>('/auth/drive', {
+      method: 'DELETE',
       baseUrl: baseUrl ?? getPiBaseUrl(),
     }),
 

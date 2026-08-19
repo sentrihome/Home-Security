@@ -8,7 +8,7 @@ import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { useAuth } from '@/context/AuthContext';
 import { useSetupWizard } from '@/context/SetupWizardContext';
-import { config } from '@/lib/config';
+import { config, PI_LAN_HOST, TAILSCALE_PI_HOST } from '@/lib/config';
 import { registerFcmWithPi } from '@/lib/notifications';
 
 export default function SettingsScreen() {
@@ -108,19 +108,37 @@ export default function SettingsScreen() {
       <View style={styles.card}>
         <Text style={styles.section}>Pi host / IP</Text>
         <Text style={styles.hint}>
-          Static LAN address of the Raspberry Pi (port 4000). Saved from SoftAP setup or
-          edit manually here.
+          Home LAN first ({PI_LAN_HOST}). Switch to Tailscale ({TAILSCALE_PI_HOST}) when you
+          are away. API uses port 4000; live video uses port 8889 on the same host.
         </Text>
         <TextInput
           value={piHostDraft}
           onChangeText={setPiHostDraft}
-          placeholder="192.168.0.236"
+          placeholder={PI_LAN_HOST}
           autoCapitalize="none"
           autoCorrect={false}
           style={styles.input}
         />
         <Text style={styles.meta}>Resolved: {piBaseUrl}</Text>
         <PrimaryButton label="Save Pi host" onPress={savePiHostUrl} />
+        <PrimaryButton
+          label={`Use LAN (${PI_LAN_HOST})`}
+          variant="secondary"
+          onPress={async () => {
+            setPiHostDraft(PI_LAN_HOST);
+            await setPiHost(PI_LAN_HOST);
+            setMessage('Using home LAN.');
+          }}
+        />
+        <PrimaryButton
+          label={`Use Tailscale (${TAILSCALE_PI_HOST})`}
+          variant="secondary"
+          onPress={async () => {
+            setPiHostDraft(TAILSCALE_PI_HOST);
+            await setPiHost(TAILSCALE_PI_HOST);
+            setMessage('Using Tailscale.');
+          }}
+        />
       </View>
 
       <View style={styles.card}>

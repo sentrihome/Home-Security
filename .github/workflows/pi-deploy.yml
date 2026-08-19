@@ -9,7 +9,7 @@
 #
 # Optional:
 #   TS_AUTHKEY    — Tailscale auth key (reusable, tagged). If set, runner joins your tailnet first.
-#   PI_REPO_DIR   — clone path on Pi (default /home/koushik/Home-Security)
+#   PI_REPO_DIR   — clone path on Pi (default /home/koushik/apps/Home-Security)
 #
 # One-time Pi bootstrap: see rasberry-pi-setup/PI-SOFTAP-README.md → "CI deploy"
 
@@ -17,6 +17,7 @@ name: Pi pull & deploy
 
 on:
   push:
+    branches: [pie-Neaz-clips, pie-dev-testing]
     paths:
       - "rasberry-pi-setup/**"
       - ".github/workflows/pi-deploy.yml"
@@ -76,7 +77,7 @@ jobs:
         env:
           DEPLOY_REF: ${{ github.event.inputs.ref || github.sha }}
         run: |
-          REPO_DIR="${PI_REPO_DIR:-/home/koushik/Home-Security}"
+          REPO_DIR="${PI_REPO_DIR:-/home/koushik/apps/Home-Security}"
           echo "Deploying ref=$DEPLOY_REF → ${PI_SSH_USER}@${PI_SSH_HOST}:${REPO_DIR}"
 
           # Checkout first so this commit's ci-pull-deploy.sh exists, then run it.

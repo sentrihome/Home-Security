@@ -1,6 +1,272 @@
-# Testing Guide
+# Home Security — implementation guides
 
-Run automated tests and manual checks before pushing. Covers cloud-backend auth and API, and frontend (Android app) flows.
+System design (D1–D19, §1–§23) lives in **[README.md](README.md)**. This file is for
+people picking up a slice of work.
+
+| Guide | Who | Status |
+|---|---|---|
+| [Phone: Google Drive OAuth](#phone-google-drive-oauth-and-token-handoff) | mobile app | **ready to implement** — Pi side is live |
+| [Legacy cloud-backend testing](#legacy-cloud-backend-testing-guide) | retired path (D10) | do not extend |
+
+---
+
+## Phone: Google Drive OAuth and token handoff
+
+**Owner:** whoever is on the mobile app (`mobile/`).
+**Pi owner does not need to wait** — `pi_hub/drive.py` already records clips and
+uploads them once this handoff succeeds.
+
+Architecture: [README.md §17](README.md#17-clips-pi-cache--google-drive) (pipeline)
+and [§18](README.md#18-google-token-handoff) (security rules). This section is the
+copy-paste contract + Expo template.
+
+### What the Pi needs from the phone
+
+The Pi never talks to Google as "the user" until the phone finishes OAuth and
+hands credentials over. One `POST` on the home LAN or Tailscale — never a public
+URL.
+
+`POST http://<pi-host>:4000/auth/drive`
+
+The refresh token is **bound to the OAuth client that issued it**. The Pi
+therefore needs that client's id and secret so it can mint access tokens later,
+when a clip is ready and the phone is not around.
+
+Send **exactly one** of the two shapes below. `client_id` + `client_secret` are
+required in both.
+
+#### Shape A — phone already has a refresh token (preferred)
+
+```json
+{
+  "refresh_token": "1//0e…",
+  "email": "user@gmail.com",
+  "client_id": "xxxx.apps.googleusercontent.com",
+  "client_secret": "GOCSPX-…"
+}
+```
+
+`email` can be omitted: the Pi will call Google userinfo after refreshing. Send
+it anyway so the Settings UI can show "Drive linked as …" without a round trip.
+
+#### Shape B — phone has an auth code (Expo AuthSession default)
+
+Expo `AuthSession` returns an **authorization code** plus a PKCE
+`code_verifier`. Forward both; the Pi exchanges them for the refresh token.
+
+```json
+{
+  "auth_code": "4/0Aan…",
+  "code_verifier": "the PKCE verifier from AuthRequest",
+  "redirect_uri": "homesecurity://oauth",
+  "client_id": "xxxx.apps.googleusercontent.com",
+  "client_secret": "GOCSPX-…",
+  "email": "user@gmail.com"
+}
+```
+
+`server_auth_code` is accepted as an alias of `auth_code` (Google Sign-In
+Android/iOS). If that library used PKCE, still send `code_verifier`.
+
+#### Success / failure
+
+```json
+{ "ok": true, "email": "user@gmail.com", "folder_name": "SentriHome", "linked": true }
+```
+
+```json
+{ "ok": false, "error": "…", "hint": "Need access_type=offline and prompt=consent …" }
+```
+
+If `hint` mentions `prompt=consent`, Google did not issue a refresh token.
+That is almost always a missing `access_type=offline` or a silent re-auth that
+skipped the consent screen.
+
+### Other Pi endpoints the phone uses
+
+| Method | Path | Why |
+|---|---|---|
+| `GET` | `/auth/drive` | `{ linked, email, folder_name, last_upload, error }` — no secrets |
+| `DELETE` | `/auth/drive` | User tapped Disconnect. Pi forgets the token. |
+| `GET` | `/health` | `drive.linked` / `drive.error` (and legacy `drive_token`: bool) |
+| `POST` | `/motion` | Optional: force a clip so you can verify upload during Settings QA |
+
+Helpers already exist in `mobile/lib/api.ts`: `piApi.authDrive`, `piApi.driveStatus`.
+Pi host comes from the setup wizard / Settings (`getPiBaseUrl()`, port 4000).
+
+Do **not** list clips via `GET /clips/cache` in the product UI. That is a Pi-local
+debug listing. Playback is the user's own Drive session (cellular, Tailscale off)
+— that is a follow-up on the Clips tab, not this handoff.
+
+### Google Cloud Console (once, shared by phone + Pi)
+
+1. Create (or reuse) a Google Cloud project.
+2. Enable **Google Drive API**.
+3. OAuth consent screen: External, test users = the Gmail accounts you use.
+4. Scopes:
+   - `https://www.googleapis.com/auth/drive.file` (files this app creates only)
+   - `https://www.googleapis.com/auth/userinfo.email`
+5. Create an OAuth client, type **Web application** (not iOS/Android — native
+   clients do not give the Pi a refreshable token).
+6. Authorized redirect URIs, all of these:
+   - `homesecurity://oauth`  (dev client, `app.json` scheme)
+   - the URI `AuthSession.makeRedirectUri({ scheme: 'homesecurity', path: 'oauth' })` prints on device
+7. Copy **Client ID** and **Client secret** into the app env (below). The same
+   pair is what `POST /auth/drive` sends to the Pi.
+
+Desktop-app clients also work; Web is the one Expo documents. Do not create a
+separate Pi-only client — a refresh token from client A cannot be refreshed by
+client B.
+
+### App env (`mobile/.env`)
+
+```
+EXPO_PUBLIC_GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
+EXPO_PUBLIC_GOOGLE_CLIENT_SECRET=GOCSPX-…
+```
+
+These are "installed app" secrets: they ship in the binary. That is expected.
+The **refresh token** is the real secret — store it in SecureStore if the phone
+keeps a copy, and never log it. The Pi encrypts its copy at rest.
+
+### Packages to add
+
+```bash
+cd mobile
+npx expo install expo-auth-session expo-crypto
+```
+
+`expo-web-browser` is already a dependency.
+
+### Template — drop into `mobile/lib/driveAuth.ts`
+
+This is a starting file, not production-polished UX. Wire a Settings button to
+`connectGoogleDrive()`, show `driveStatus().email`, and a Disconnect that calls
+`DELETE /auth/drive` plus `signOut` of the Google session.
+
+```ts
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
+
+import { piApi } from '@/lib/api';
+
+WebBrowser.maybeCompleteAuthSession();
+
+const CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
+const CLIENT_SECRET = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_SECRET ?? '';
+
+const SCOPES = [
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
+
+const discovery: AuthSession.DiscoveryDocument = {
+  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+  tokenEndpoint: 'https://oauth2.googleapis.com/token',
+};
+
+export function googleRedirectUri(): string {
+  return AuthSession.makeRedirectUri({ scheme: 'homesecurity', path: 'oauth' });
+}
+
+/** Run from a Settings "Connect Google Drive" button. Must reach the Pi. */
+export async function connectGoogleDrive(): Promise<{ email: string }> {
+  if (!CLIENT_ID || !CLIENT_SECRET) {
+    throw new Error('Set EXPO_PUBLIC_GOOGLE_CLIENT_ID and _CLIENT_SECRET in mobile/.env');
+  }
+
+  const redirectUri = googleRedirectUri();
+  const request = new AuthSession.AuthRequest({
+    clientId: CLIENT_ID,
+    scopes: SCOPES,
+    redirectUri,
+    responseType: AuthSession.ResponseType.Code,
+    usePKCE: true,
+    extraParams: {
+      access_type: 'offline',
+      prompt: 'consent', // required or Google omits refresh_token on the second login
+    },
+  });
+
+  const result = await request.promptAsync(discovery);
+  if (result.type !== 'success' || !result.params.code) {
+    throw new Error(result.type === 'cancel' ? 'Sign-in cancelled' : 'Google sign-in failed');
+  }
+
+  const handed = await piApi.authDrive({
+    auth_code: result.params.code,
+    code_verifier: request.codeVerifier,
+    redirect_uri: redirectUri,
+    client_id: CLIENT_ID,
+    client_secret: CLIENT_SECRET,
+  });
+
+  if (!handed.ok) {
+    throw new Error(handed.error || 'Pi rejected Drive credentials');
+  }
+  return { email: handed.email || '' };
+}
+
+export async function driveLinkStatus() {
+  return piApi.driveStatus();
+}
+```
+
+Settings UX (minimum):
+
+1. Button **Connect Google Drive** → `connectGoogleDrive()`.
+2. After success, show `Drive linked as {email}`. Confirm with `piApi.driveStatus()`.
+3. Button **Disconnect Drive** → `piApi.unlinkDrive()`.
+4. If `driveStatus().error` contains `invalid_grant`, show **Reconnect Google Drive**
+   (token revoked in Google Account settings). Do not fail silently.
+
+Keep the existing cloud-backend "paste a Bearer token" login (`/login`) alone —
+that is the retired S3 clips path (D10). Drive linking is a **separate** control
+on Settings, talking to the Pi, not to port 3001.
+
+### Local smoke test (phone person, no firmware)
+
+On a laptop on the same LAN / Tailscale as the Pi, after you have a real
+`refresh_token` from Google's OAuth Playground (scope `drive.file`, offline):
+
+```bash
+curl -s -X POST http://192.168.0.236:4000/auth/drive \
+  -H 'Content-Type: application/json' \
+  -d '{"refresh_token":"1//…","email":"you@gmail.com","client_id":"….apps.googleusercontent.com","client_secret":"GOCSPX-…"}'
+
+curl -s http://192.168.0.236:4000/auth/drive   # linked: true, no token in body
+curl -s -X POST http://192.168.0.236:4000/motion
+# Drive: a SentriHome folder appears; clip-YYYYMMDD-HHMMSS.mp4 inside it
+```
+
+Replace the LAN IP with the Tailscale IP (`100.66.51.106`) when testing off-LAN.
+
+### Phone-side checklist (Phase 8, handoff only)
+
+- [ ] Google Cloud Web client + Drive API + test users
+- [ ] `expo-auth-session` + env client id/secret
+- [ ] `access_type=offline` **and** `prompt=consent` on every connect
+- [ ] Scope limited to `drive.file` + email — not `drive` / `drive.readonly`
+- [ ] `POST /auth/drive` only while on LAN or Tailscale
+- [ ] SecureStore if the app keeps `refresh_token`; never `console.log` it
+- [ ] Settings: linked email, disconnect, reconnect-on-revoked
+- [ ] Confirm `GET /health` → `drive.linked: true` after connect
+- [ ] Confirm a `POST /motion` clip lands in Drive **SentriHome**
+- [ ] Later (not this ticket): Clips tab lists/plays from Drive with Tailscale off
+
+### Out of scope for the phone person (already on the Pi)
+
+Clip record from MediaMTX, encrypted token file, folder create, multipart
+upload, `invalid_grant` surfaced on `GET /auth/drive`. Local cache retention
+after a successful upload is still TBD (README §22 #9).
+
+---
+
+## Legacy: cloud-backend testing guide
+
+Run automated tests and manual checks before pushing. Covers **retired**
+cloud-backend auth and API, and the old frontend (Android app) flows. Product
+clips are Pi → Drive (above), not S3.
 
 ---
 
