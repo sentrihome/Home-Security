@@ -90,12 +90,15 @@ def load_token() -> Optional[dict]:
 
 def has_token() -> bool:
     data = load_token()
-    return bool(data and data.get("refresh_token"))
+    if not data or not data.get("refresh_token"):
+        return False
+    cid, secret = _client_credentials(data)
+    return bool(cid and secret)
 
 
 def status() -> dict:
     data = load_token()
-    linked = bool(data and data.get("refresh_token"))
+    linked = has_token()
     out: dict[str, Any] = {
         "linked": linked,
         "email": (data or {}).get("email") if linked else None,
@@ -104,6 +107,10 @@ def status() -> dict:
         "last_upload": _last_upload,
         "error": _last_error,
     }
+    if data and data.get("refresh_token") and not linked:
+        out["error"] = out["error"] or (
+            "token on Pi is incomplete — on home Wi-Fi, open the phone app and tap Send Drive token"
+        )
     return out
 
 
@@ -242,9 +249,10 @@ def _exchange_auth_code(
         "code": code,
         "client_id": client_id,
         "client_secret": client_secret,
-        "redirect_uri": redirect_uri or config.DRIVE_OAUTH_REDIRECT_URI,
         "grant_type": "authorization_code",
     }
+    if redirect_uri:
+        payload["redirect_uri"] = redirect_uri
     if code_verifier:
         payload["code_verifier"] = code_verifier
     form = urllib.parse.urlencode(payload).encode("utf-8")
@@ -317,6 +325,23 @@ def _refresh_access_token_raw(
     return _access_token, None
 
 
+def _client_credentials(data: dict) -> tuple[str, str]:
+    """Prefer credentials stored with the refresh token; else /dev portal file."""
+    cid = str(data.get("client_id") or "").strip()
+    secret = str(data.get("client_secret") or "").strip()
+    if cid and secret:
+        return cid, secret
+    try:
+        from . import portal as _portal
+
+        oauth = _portal.load_oauth_client() or {}
+    except Exception:
+        oauth = {}
+    cid = cid or str(oauth.get("client_id") or "").strip()
+    secret = secret or str(oauth.get("client_secret") or "").strip()
+    return cid, secret
+
+
 def _access_token_for_upload() -> tuple[Optional[str], Optional[str]]:
     global _last_error
     now = time.time()
@@ -326,8 +351,19 @@ def _access_token_for_upload() -> tuple[Optional[str], Optional[str]]:
     if not data or not data.get("refresh_token"):
         _last_error = "no Drive token — POST /auth/drive first"
         return None, _last_error
+    client_id, client_secret = _client_credentials(data)
+    if not client_id or not client_secret:
+        _last_error = (
+            "Drive token is missing client_id/client_secret. "
+            "On home Wi-Fi, open the phone app Setup → Drive and tap Send Drive token."
+        )
+        return None, _last_error
+    if not data.get("client_id") or not data.get("client_secret"):
+        data["client_id"] = client_id
+        data["client_secret"] = client_secret
+        _encrypt_payload(data)
     token, err = _refresh_access_token_raw(
-        data["refresh_token"], data["client_id"], data["client_secret"]
+        data["refresh_token"], client_id, client_secret
     )
     if err:
         _last_error = err

@@ -25,8 +25,8 @@ export default function LoginScreen() {
     setBusy(true);
     setError('');
     try {
-      const { accessToken, refreshToken, email } = await signInWithGoogle();
-      await signIn({ token: accessToken, refreshToken, email });
+      const { accessToken, refreshToken, serverAuthCode, email } = await signInWithGoogle();
+      await signIn({ token: accessToken, refreshToken, serverAuthCode, email });
       router.back();
     } catch (err) {
       setError(formatGoogleSignInError(err));

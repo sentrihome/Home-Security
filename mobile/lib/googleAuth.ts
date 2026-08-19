@@ -6,6 +6,8 @@ import {
 } from '@react-native-google-signin/google-signin';
 import { Platform } from 'react-native';
 
+import { getGoogleWebClient } from '@/lib/googleClient';
+
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
 /** Debug keystore SHA-1 used by `npx expo run:android` (android/app/debug.keystore). */
@@ -14,8 +16,10 @@ export const DEBUG_ANDROID_SHA1 =
 
 export type GoogleSignInResult = {
   accessToken: string;
-  /** Long-lived refresh token when offline access works; otherwise access token (Pi stub accepts it). */
-  refreshToken: string;
+  /** Present only when Google issued a real refresh token. */
+  refreshToken?: string;
+  /** Forward to the Pi over LAN if refresh_token is not yet available. */
+  serverAuthCode?: string;
   email: string;
 };
 
@@ -25,7 +29,7 @@ function ensureConfigured() {
   if (configured) return;
 
   // webClientId MUST be an OAuth client of type "Web application" — never the Android client ID.
-  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() || undefined;
+  const { clientId: webClientId } = getGoogleWebClient();
 
   GoogleSignin.configure({
     ...(webClientId ? { webClientId } : {}),
@@ -69,15 +73,16 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
     throw new Error('Google did not return an access token.');
   }
 
-  let refreshToken =
-    (await exchangeServerAuthCode(response.data.serverAuthCode)) ?? null;
+  const serverAuthCode = response.data.serverAuthCode ?? undefined;
+  let refreshToken = (await exchangeServerAuthCode(serverAuthCode ?? null)) ?? undefined;
 
-  if (!refreshToken) {
-    // Enough for Step 7 Pi handoff stub (drive_token: true).
-    refreshToken = accessToken;
+  if (!refreshToken && !serverAuthCode) {
+    throw new Error(
+      'Google did not issue a refresh token or server auth code. Confirm the factory app has the Web client id/secret, then sign in again.'
+    );
   }
 
-  return { accessToken, refreshToken, email };
+  return { accessToken, refreshToken, serverAuthCode, email };
 }
 
 async function exchangeServerAuthCode(
@@ -85,8 +90,7 @@ async function exchangeServerAuthCode(
 ): Promise<string | null> {
   if (!serverAuthCode) return null;
 
-  const clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-  const clientSecret = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_SECRET;
+  const { clientId, clientSecret } = getGoogleWebClient();
   if (!clientId || !clientSecret) return null;
 
   const body = new URLSearchParams({

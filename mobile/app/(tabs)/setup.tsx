@@ -21,6 +21,11 @@ import {
   signInWithGoogle,
   signOutGoogle,
 } from '@/lib/googleAuth';
+import {
+  getGoogleWebClient,
+  googleWebClientReady,
+  isGoogleRefreshToken,
+} from '@/lib/googleClient';
 import { registerFcmWithPi } from '@/lib/notifications';
 import {
   PERMANENT_PASS_ALLOWED,
@@ -43,7 +48,7 @@ interface WifiNetwork {
   security: string;
 }
 
-const STEP_LABELS = ['Pi Wi-Fi', 'ESP32', 'Done'];
+const STEP_LABELS = ['Google', 'Pi Wi-Fi', 'Drive', 'ESP32'];
 const ESP_STEP_LABELS = ['Connect', 'Wi-Fi', 'Permanent', 'Random', 'Module'];
 
 /**
@@ -96,15 +101,15 @@ export default function SetupScreen() {
   const [debugBusy, setDebugBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [googleStatus, setGoogleStatus] = useState('');
+  const [driveStatus, setDriveStatus] = useState('');
+  const [showAllSteps, setShowAllSteps] = useState(true);
   const googleReady = isGoogleSignInReady();
-
-  useEffect(() => {
-    if (currentStep > 0) setPiSetupDone(true);
-    if (currentStep >= 2) {
-      setEspAcknowledged(true);
-      setModulePaired(true);
-    }
-  }, [currentStep]);
+  const webClientReady = googleWebClientReady();
+  const canSendDrive = Boolean(
+    session?.email &&
+      webClientReady &&
+      (isGoogleRefreshToken(session.refreshToken) || session.serverAuthCode)
+  );
 
   useEffect(() => {
     (async () => {
@@ -117,8 +122,8 @@ export default function SetupScreen() {
     setGoogleBusy(true);
     setGoogleStatus('');
     try {
-      const { accessToken, refreshToken, email } = await signInWithGoogle();
-      await signIn({ token: accessToken, refreshToken, email });
+      const { accessToken, refreshToken, serverAuthCode, email } = await signInWithGoogle();
+      await signIn({ token: accessToken, refreshToken, serverAuthCode, email });
       setGoogleStatus(`Signed in as ${email}`);
     } catch (e) {
       setGoogleStatus(formatGoogleSignInError(e));
@@ -134,17 +139,29 @@ export default function SetupScreen() {
   }
 
   async function sendDriveTokenToPi(baseUrl: string) {
-    if (!session?.email || !session.refreshToken) {
-      throw new Error('Sign in with Google first (refresh token required).');
+    if (!session?.email) {
+      throw new Error('Sign in with Google first.');
     }
-    const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim();
-    const webClientSecret = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_SECRET?.trim();
+    const { clientId, clientSecret } = getGoogleWebClient();
+    if (!clientId || !clientSecret) {
+      throw new Error(
+        'This app build is missing the Google Web client. Put EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID and EXPO_PUBLIC_GOOGLE_WEB_CLIENT_SECRET in mobile/.env, restart Expo, and sign in again. Customers never copy files onto the Pi — the phone sends this over LAN.'
+      );
+    }
+    const refresh = isGoogleRefreshToken(session.refreshToken)
+      ? session.refreshToken
+      : undefined;
+    const serverAuthCode = session.serverAuthCode?.trim() || undefined;
+    if (!refresh && !serverAuthCode) {
+      throw new Error('Sign in with Google again so the app can send a Drive token over LAN.');
+    }
     const handoff = await piApi.authDrive(
       {
         email: session.email,
-        refresh_token: session.refreshToken,
-        ...(webClientId ? { client_id: webClientId } : {}),
-        ...(webClientSecret ? { client_secret: webClientSecret } : {}),
+        client_id: clientId,
+        client_secret: clientSecret,
+        ...(refresh ? { refresh_token: refresh } : {}),
+        ...(serverAuthCode ? { server_auth_code: serverAuthCode } : {}),
       },
       baseUrl
     );
@@ -212,7 +229,7 @@ export default function SetupScreen() {
       setPendingPiHost(host);
       setPiWifiPassword('');
 
-      if (session?.refreshToken) {
+      if (canSendDrive) {
         setSetupStatus('WiFi saved. Sending Google Drive token to Pi…');
         try {
           await sendDriveTokenToPi(PI_SOFTAP_BASE_URL);
@@ -249,7 +266,7 @@ export default function SetupScreen() {
     try {
       const baseUrl = `http://${host}:4000`;
       await piApi.health(baseUrl);
-      if (session?.refreshToken) {
+      if (canSendDrive) {
         setSetupStatus('Sending Google Drive token to Pi…');
         await sendDriveTokenToPi(baseUrl);
       }
@@ -266,7 +283,7 @@ export default function SetupScreen() {
             : ' FCM register failed';
       }
       setSetupStatus(
-        session?.refreshToken
+        canSendDrive
           ? `Pi OK at ${host}. Drive token stored.${extra}`
           : `Pi reachable at ${host}.${extra}`
       );
@@ -304,18 +321,63 @@ export default function SetupScreen() {
     setPiWifiPassword('');
     setSetupStatus('');
     setPendingPiHost(DEFAULT_PI_HOST);
-    setCurrentStep(0);
+    setCurrentStep(1);
   }
 
-  async function sendDriveToCurrentPi() {
+  async function sendDriveToPiAt(baseUrl: string, label: string) {
     setVerifying(true);
-    setSetupStatus(`Sending Drive token to ${piBaseUrl}…`);
+    setDriveStatus(`Sending Drive token to ${label} (${baseUrl})…`);
     try {
-      await sendDriveTokenToPi(piBaseUrl);
-      setSetupStatus(`Drive token stored on ${piHost}.`);
+      await sendDriveTokenToPi(baseUrl);
+      let extra = '';
+      try {
+        const st = await piApi.driveStatus(baseUrl);
+        extra = st.linked
+          ? ` Linked as ${st.email ?? session?.email}. Folder ${st.folder_name ?? 'SentriHome'}.`
+          : ` Pi says linked=${String(st.linked)}. ${st.error ?? ''}`;
+      } catch {
+        extra = ' Token POST succeeded; status GET failed.';
+      }
+      setDriveStatus(`Drive token stored on ${label}.${extra}`);
     } catch (error) {
-      setSetupStatus(
+      setDriveStatus(
         error instanceof Error ? `Drive handoff failed: ${error.message}` : 'Drive handoff failed'
+      );
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function checkDriveOnPi(baseUrl: string, label: string) {
+    setVerifying(true);
+    setDriveStatus(`Checking Drive on ${label}…`);
+    try {
+      const st = await piApi.driveStatus(baseUrl);
+      setDriveStatus(
+        st.linked
+          ? `${label}: linked as ${st.email ?? '?'}. Folder ${st.folder_name ?? '?'}.${
+              st.error ? ` Error: ${st.error}` : ''
+            }`
+          : `${label}: not linked. ${st.error ?? 'Sign in, then Send Drive token.'}`
+      );
+    } catch (error) {
+      setDriveStatus(
+        error instanceof Error ? `${label}: ${error.message}` : `${label}: status failed`
+      );
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function unlinkDriveOnPi(baseUrl: string, label: string) {
+    setVerifying(true);
+    setDriveStatus(`Forgetting Drive token on ${label}…`);
+    try {
+      await piApi.unlinkDrive(baseUrl);
+      setDriveStatus(`${label}: Drive token removed.`);
+    } catch (error) {
+      setDriveStatus(
+        error instanceof Error ? `${label}: ${error.message}` : 'Unlink failed'
       );
     } finally {
       setVerifying(false);
@@ -460,7 +522,7 @@ export default function SetupScreen() {
         setModulePaired(true);
         setEspAcknowledged(true);
         setEspStep(5);
-        setCurrentStep(2);
+        setCurrentStep(3);
         setEspStatus('');
       } else {
         setEspStatus(
@@ -536,18 +598,26 @@ export default function SetupScreen() {
     }
   }
 
+  const show = (step: WizardStep) => showAllSteps || currentStep === step;
+
   return (
     <Screen
       title="Device setup"
-      subtitle="Redo any connection at any time — Google, Pi, Drive, camera, or ESP.">
+      subtitle="Tap a step anytime. Drive token can be sent to SoftAP or LAN without redoing Wi-Fi.">
       <StepIndicator current={currentStep} onSelect={setCurrentStep} />
+      <PrimaryButton
+        label={showAllSteps ? 'Show one step at a time' : 'Show all steps'}
+        variant="secondary"
+        onPress={() => setShowAllSteps((v) => !v)}
+      />
 
+      {show(0) ? (
       <StepCard
         n={1}
-        title="Pi: Google, Wi-Fi, Drive, camera"
-        subtitle="Join HomeSecurity-Setup for Wi-Fi, or use LAN/Tailscale for Drive and camera."
-        done={piSetupDone}>
-        {isLoggedIn ? (
+        title="Google sign-in"
+        subtitle="Needed before Drive handoff. Android dev client only (not Expo Go)."
+        done={canSendDrive}>
+        {isLoggedIn || session?.email ? (
           <>
             <Text style={styles.hint}>Google: {session?.email}</Text>
             <PrimaryButton
@@ -565,7 +635,20 @@ export default function SetupScreen() {
           />
         )}
         {googleStatus ? <Text style={styles.hint}>{googleStatus}</Text> : null}
+        <Text style={styles.helper}>
+          {webClientReady
+            ? 'Factory Web client is in this app build. Sign in, then send the token over LAN — nothing to copy onto the Pi.'
+            : 'MISSING Web client in this build. Add EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID and _SECRET to mobile/.env and restart Expo. Store builds must bake these in.'}
+        </Text>
+      </StepCard>
+      ) : null}
 
+      {show(1) ? (
+      <StepCard
+        n={2}
+        title="Pi Wi-Fi"
+        subtitle="Join HomeSecurity-Setup / setup1234 to scan, or skip if the Pi is already on LAN."
+        done={piSetupDone}>
         <Text style={styles.hint}>
           Pi hotspot:{' '}
           <Text style={styles.bold}>HomeSecurity-Setup</Text> /{' '}
@@ -640,12 +723,6 @@ export default function SetupScreen() {
           onPress={verifyPiOnLan}
         />
         <PrimaryButton
-          label="Send Drive token to Pi"
-          loading={verifying}
-          disabled={!isLoggedIn}
-          onPress={sendDriveToCurrentPi}
-        />
-        <PrimaryButton
           label="Start camera"
           loading={verifying}
           onPress={startPiCamera}
@@ -656,7 +733,7 @@ export default function SetupScreen() {
           onPress={async () => {
             await setPiHost(DEFAULT_PI_HOST);
             setPiSetupDone(true);
-            advanceFromPiSetup();
+            setCurrentStep(2);
           }}
         />
         <PrimaryButton label="Redo Pi Wi-Fi form" variant="secondary" onPress={redoPiWifi} />
@@ -671,12 +748,57 @@ export default function SetupScreen() {
           </Text>
         ) : null}
       </StepCard>
+      ) : null}
 
+      {show(2) ? (
       <StepCard
-        n={2}
-        title="Configure ESP32"
-        subtitle={`Pi: ${piHost} (${piBaseUrl}). Open any sub-step — you do not have to finish the previous one.`}
-        done={espAcknowledged}>
+        n={3}
+        title="Google Drive token"
+        subtitle="The phone sends your Google token over Wi-Fi. You never copy files onto the Pi."
+        done={false}>
+        <Text style={styles.hint}>
+          Phone must be on the same network as the target. Google: {session?.email ?? 'not signed in'}.
+        </Text>
+        <PrimaryButton
+          label="Send Drive token to SoftAP (10.42.0.1)"
+          loading={verifying}
+          disabled={!canSendDrive}
+          onPress={() => sendDriveToPiAt(PI_SOFTAP_BASE_URL, 'SoftAP')}
+        />
+        <PrimaryButton
+          label={`Send Drive token to LAN (${piHost})`}
+          loading={verifying}
+          disabled={!canSendDrive}
+          onPress={() => sendDriveToPiAt(piBaseUrl, `LAN ${piHost}`)}
+        />
+        <PrimaryButton
+          label="Check Drive status on LAN"
+          variant="secondary"
+          loading={verifying}
+          onPress={() => checkDriveOnPi(piBaseUrl, `LAN ${piHost}`)}
+        />
+        <PrimaryButton
+          label="Check Drive status on SoftAP"
+          variant="secondary"
+          loading={verifying}
+          onPress={() => checkDriveOnPi(PI_SOFTAP_BASE_URL, 'SoftAP')}
+        />
+        <PrimaryButton
+          label="Forget Drive token on LAN"
+          variant="secondary"
+          loading={verifying}
+          onPress={() => unlinkDriveOnPi(piBaseUrl, `LAN ${piHost}`)}
+        />
+        {driveStatus ? <Text style={styles.status}>{driveStatus}</Text> : null}
+      </StepCard>
+      ) : null}
+
+      {show(3) ? (
+        <StepCard
+          n={4}
+          title="Configure ESP32"
+          subtitle={`Pi: ${piHost} (${piBaseUrl}). Open any sub-step — you do not have to finish the previous one.`}
+          done={espAcknowledged}>
         <RNView style={styles.chipRow}>
           {ESP_STEP_LABELS.map((label, index) => (
             <TouchableOpacity
@@ -790,6 +912,7 @@ export default function SetupScreen() {
 
         <PrimaryButton label="Reset ESP form only" variant="secondary" onPress={resetEspState} />
       </StepCard>
+      ) : null}
 
       <View style={styles.divider} />
 

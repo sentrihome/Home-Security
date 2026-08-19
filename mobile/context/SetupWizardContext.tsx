@@ -17,7 +17,8 @@ import {
 } from '@/lib/config';
 import { loadPiHost, savePiHost } from '@/lib/storage';
 
-export type WizardStep = 0 | 1 | 2;
+/** 0 Google · 1 Pi Wi-Fi · 2 Drive token · 3 ESP32 — all always jumpable. */
+export type WizardStep = 0 | 1 | 2 | 3;
 
 type SetupWizardContextValue = {
   currentStep: WizardStep;
@@ -55,11 +56,8 @@ export function SetupWizardProvider({ children }: { children: ReactNode }) {
         const host = resolveStoredPiHost(stored);
         setPiHostState(host);
         setPiBaseUrlOverride(computePiBaseUrl(host));
-        if (stored) {
-          setCurrentStep(1);
-          if (normalizePiHost(stored) === TAILSCALE_PI_HOST && host === DEFAULT_PI_HOST) {
-            await savePiHost(host);
-          }
+        if (stored && normalizePiHost(stored) === TAILSCALE_PI_HOST && host === DEFAULT_PI_HOST) {
+          await savePiHost(host);
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -80,7 +78,7 @@ export function SetupWizardProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const advanceFromPiSetup = useCallback(() => {
-    setCurrentStep(1);
+    setCurrentStep(2);
   }, []);
 
   const piBaseUrl = useMemo(() => computePiBaseUrl(piHost), [piHost]);

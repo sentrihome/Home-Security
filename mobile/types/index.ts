@@ -1,9 +1,11 @@
 export type AuthSession = {
-  /** Google access token (short-lived); app uses this for Drive later. */
+  /** Google access token (short-lived). */
   token: string;
   email: string;
-  /** Google refresh token handed to the Pi via POST /auth/drive. */
+  /** Long-lived Google refresh token handed to the Pi via POST /auth/drive. */
   refreshToken?: string;
+  /** Google Sign-In server auth code — Pi can exchange this if refresh_token is missing. */
+  serverAuthCode?: string;
 };
 
 export type EventClip = {

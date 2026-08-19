@@ -130,6 +130,17 @@ class UploadClipTest(DriveTestCase):
         self.assertFalse(result["ok"])
         self.assertIn("no Drive token", result["error"])
 
+    def test_token_without_client_id_does_not_crash(self):
+        drive._encrypt_payload(
+            {"email": "a@b.c", "refresh_token": "rt-only"}
+        )
+        clip = Path(self.tmp.name) / "clip-1.mp4"
+        clip.write_bytes(b"\x00" * 64)
+        result = drive.upload_clip(clip)
+        self.assertFalse(result["ok"])
+        self.assertIn("client_id", result["error"])
+        self.assertIn("client_id", drive.status()["error"])
+
     def test_upload_happy_path(self):
         self._store()
         clip = Path(self.tmp.name) / "clip-20260101-120000.mp4"
