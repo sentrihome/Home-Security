@@ -1,5 +1,6 @@
 #include "app_uart.h"
 #include "jsonhandler.h"
+#include "httpendpoints.h"
 
 // Install Drivers
 // First of all, install the driver by calling uart_driver_install() and specify the following parameters:
@@ -143,6 +144,12 @@ std::string uart_s::receive()
     {
         pair.process(payload);
 
+        break;
+    }
+    case cmd_s::SENSOR:
+    {
+        printf("Motion detected\nIncoming Message: %s\n", payload.c_str());
+        trigger_motion_remote(payload);
         break;
     }
     default:

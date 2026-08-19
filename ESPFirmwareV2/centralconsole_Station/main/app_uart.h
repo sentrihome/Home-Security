@@ -14,6 +14,7 @@
 enum class cmd_s : int
 {
     MOBILE_PAIRING,
+    SENSOR
 };
 
 struct uart_s
