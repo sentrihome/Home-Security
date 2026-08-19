@@ -21,6 +21,7 @@ import {
   signInWithGoogle,
   signOutGoogle,
 } from '@/lib/googleAuth';
+import { registerFcmWithPi } from '@/lib/notifications';
 import {
   PERMANENT_PASS_ALLOWED,
   PERMANENT_PASS_LENGTH,
@@ -162,9 +163,25 @@ export default function SetupScreen() {
 
       await setPiHost(host);
       setPendingPiHost(host);
+
+      let fcmMsg = '';
+      try {
+        fcmMsg = await registerFcmWithPi({
+          force: true,
+          baseUrl: `http://${host}:4000`,
+        });
+      } catch (e) {
+        fcmMsg =
+          e instanceof Error
+            ? `FCM register failed: ${e.message}`
+            : 'FCM register failed';
+      }
+
       setPiSetupDone(true);
       advanceFromPiSetup();
-      setSetupStatus(`Pi OK at ${host}. Drive token stored on Pi.`);
+      setSetupStatus(
+        `Pi OK at ${host}. Drive token stored on Pi. ${fcmMsg}`
+      );
     } catch (error) {
       setSetupStatus(
         error instanceof Error

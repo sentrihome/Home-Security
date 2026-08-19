@@ -28,6 +28,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "package": "com.sinisterchiller.homesecurity",
+      "googleServicesFile": "./google-services.json",
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.INTERNET",
@@ -65,6 +66,14 @@
         "@react-native-google-signin/google-signin",
         {
           "iosUrlScheme": "com.googleusercontent.apps.948492922591-kpa1hbpcdadkipkd3hlcd1lp7lq1bv31"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1d4ed8",
+          "defaultChannel": "alerts"
         }
       ]
     ],

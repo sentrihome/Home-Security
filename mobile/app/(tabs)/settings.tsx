@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, TextInput } from 'react-native';
+import { Platform, StyleSheet, TextInput } from 'react-native';
 import { Link, router } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 
 import { Text, View } from '@/components/Themed';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
@@ -8,6 +9,7 @@ import { Screen } from '@/components/ui/Screen';
 import { useAuth } from '@/context/AuthContext';
 import { useSetupWizard } from '@/context/SetupWizardContext';
 import { config } from '@/lib/config';
+import { registerFcmWithPi } from '@/lib/notifications';
 
 export default function SettingsScreen() {
   const { session, isLoggedIn, cloudBaseUrl, setCloudBaseUrl, signOut } = useAuth();
@@ -15,10 +17,25 @@ export default function SettingsScreen() {
   const [urlDraft, setUrlDraft] = useState(cloudBaseUrl);
   const [piHostDraft, setPiHostDraft] = useState(piHost);
   const [message, setMessage] = useState('');
+  const [notifStatus, setNotifStatus] = useState('Checking…');
+  const [pushBusy, setPushBusy] = useState(false);
 
   useEffect(() => {
     setPiHostDraft(piHost);
   }, [piHost]);
+
+  useEffect(() => {
+    (async () => {
+      if (Platform.OS !== 'android') {
+        setNotifStatus('Android only');
+        return;
+      }
+      const p = await Notifications.getPermissionsAsync();
+      setNotifStatus(
+        p.status === 'granted' ? 'Allowed' : `Not allowed (${p.status})`
+      );
+    })();
+  }, []);
 
   async function saveUrl() {
     await setCloudBaseUrl(urlDraft);
@@ -28,6 +45,23 @@ export default function SettingsScreen() {
   async function savePiHostUrl() {
     await setPiHost(piHostDraft);
     setMessage('Pi host saved.');
+  }
+
+  async function reregisterPush() {
+    setPushBusy(true);
+    setMessage('');
+    try {
+      const msg = await registerFcmWithPi({ force: true });
+      const p = await Notifications.getPermissionsAsync();
+      setNotifStatus(
+        p.status === 'granted' ? 'Allowed' : `Not allowed (${p.status})`
+      );
+      setMessage(msg);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Push registration failed');
+    } finally {
+      setPushBusy(false);
+    }
   }
 
   return (
@@ -87,6 +121,20 @@ export default function SettingsScreen() {
         />
         <Text style={styles.meta}>Resolved: {piBaseUrl}</Text>
         <PrimaryButton label="Save Pi host" onPress={savePiHostUrl} />
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.section}>Notifications (Android)</Text>
+        <Text style={styles.meta}>Permission: {notifStatus}</Text>
+        <Text style={styles.hint}>
+          Required for motion alerts. Use a dev build (expo run:android), not Expo Go. Pi
+          must expose POST /auth/fcm (Step 3).
+        </Text>
+        <PrimaryButton
+          label="Re-register push token"
+          loading={pushBusy}
+          onPress={reregisterPush}
+        />
       </View>
 
       <View style={styles.card}>

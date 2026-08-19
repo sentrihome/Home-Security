@@ -146,5 +146,16 @@ export const piApi = {
       body,
       baseUrl: baseUrl ?? getPiBaseUrl(),
     }),
+
+  /** Register Android FCM device token with the Pi. */
+  registerFcm: (
+    body: { token: string; platform: 'android' },
+    baseUrl?: string
+  ) =>
+    request<{ ok?: boolean; error?: string }>('/auth/fcm', {
+      method: 'POST',
+      body,
+      baseUrl: baseUrl ?? getPiBaseUrl(),
+    }),
 };
 
