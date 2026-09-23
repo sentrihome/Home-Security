@@ -1,6 +1,5 @@
-# Lab config for Home Security WebRTC (LAN + Tailscale).
-# Auth off — lab only; add auth before exposing beyond your tailnet.
-# See rasberry-pi-setup/docs/WEBRTC-LAB.md
+# Lab / product config — MediaMTX fan-out for live WebRTC + clip RTSP reads.
+# Auth off — lab / home Tailscale only; add auth before wider exposure.
 
 logLevel: info
 
@@ -20,7 +19,6 @@ pathDefaults:
   source: publisher
 
 paths:
-  # Allow any path name (e.g. cam) to be created by ffmpeg publish
   all_others:
   cam:
     source: publisher

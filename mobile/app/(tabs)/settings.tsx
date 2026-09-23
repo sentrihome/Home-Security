@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, TextInput } from 'react-native';
+import { Platform, StyleSheet, TextInput } from 'react-native';
 import { Link, router } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
+import * as Notifications from 'expo-notifications';
 
 import { Text, View } from '@/components/Themed';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { useAuth } from '@/context/AuthContext';
 import { useSetupWizard } from '@/context/SetupWizardContext';
-import { cloudApi } from '@/lib/api';
-import { config } from '@/lib/config';
+import { config, PI_LAN_HOST, TAILSCALE_PI_HOST } from '@/lib/config';
+import { registerFcmWithPi } from '@/lib/notifications';
 
 export default function SettingsScreen() {
   const { session, isLoggedIn, cloudBaseUrl, setCloudBaseUrl, signOut } = useAuth();
@@ -17,10 +17,25 @@ export default function SettingsScreen() {
   const [urlDraft, setUrlDraft] = useState(cloudBaseUrl);
   const [piHostDraft, setPiHostDraft] = useState(piHost);
   const [message, setMessage] = useState('');
+  const [notifStatus, setNotifStatus] = useState('Checking…');
+  const [pushBusy, setPushBusy] = useState(false);
 
   useEffect(() => {
     setPiHostDraft(piHost);
   }, [piHost]);
+
+  useEffect(() => {
+    (async () => {
+      if (Platform.OS !== 'android') {
+        setNotifStatus('Android only');
+        return;
+      }
+      const p = await Notifications.getPermissionsAsync();
+      setNotifStatus(
+        p.status === 'granted' ? 'Allowed' : `Not allowed (${p.status})`
+      );
+    })();
+  }, []);
 
   async function saveUrl() {
     await setCloudBaseUrl(urlDraft);
@@ -32,12 +47,21 @@ export default function SettingsScreen() {
     setMessage('Pi host saved.');
   }
 
-  async function openGoogleAuth() {
-    const authUrl = cloudApi.googleAuthUrl(cloudBaseUrl);
-    await WebBrowser.openBrowserAsync(authUrl);
-    setMessage(
-      'Complete Google sign-in in the browser, then paste the token on the Sign in screen (OAuth deep-link wiring comes next).'
-    );
+  async function reregisterPush() {
+    setPushBusy(true);
+    setMessage('');
+    try {
+      const msg = await registerFcmWithPi({ force: true });
+      const p = await Notifications.getPermissionsAsync();
+      setNotifStatus(
+        p.status === 'granted' ? 'Allowed' : `Not allowed (${p.status})`
+      );
+      setMessage(msg);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Push registration failed');
+    } finally {
+      setPushBusy(false);
+    }
   }
 
   return (
@@ -60,13 +84,8 @@ export default function SettingsScreen() {
           <>
             <Text style={styles.meta}>Not signed in</Text>
             <Link href="/login" asChild>
-              <PrimaryButton label="Sign in" />
+              <PrimaryButton label="Sign in with Google" />
             </Link>
-            <PrimaryButton
-              label="Open Google OAuth"
-              variant="secondary"
-              onPress={openGoogleAuth}
-            />
           </>
         )}
       </View>
@@ -89,19 +108,51 @@ export default function SettingsScreen() {
       <View style={styles.card}>
         <Text style={styles.section}>Pi host / IP</Text>
         <Text style={styles.hint}>
-          Static LAN address of the Raspberry Pi (port 4000). Saved from SoftAP setup or
-          edit manually here.
+          Home LAN first ({PI_LAN_HOST}). Switch to Tailscale ({TAILSCALE_PI_HOST}) when you
+          are away. API uses port 4000; live video uses port 8889 on the same host.
         </Text>
         <TextInput
           value={piHostDraft}
           onChangeText={setPiHostDraft}
-          placeholder="192.168.0.236"
+          placeholder={PI_LAN_HOST}
           autoCapitalize="none"
           autoCorrect={false}
           style={styles.input}
         />
         <Text style={styles.meta}>Resolved: {piBaseUrl}</Text>
         <PrimaryButton label="Save Pi host" onPress={savePiHostUrl} />
+        <PrimaryButton
+          label={`Use LAN (${PI_LAN_HOST})`}
+          variant="secondary"
+          onPress={async () => {
+            setPiHostDraft(PI_LAN_HOST);
+            await setPiHost(PI_LAN_HOST);
+            setMessage('Using home LAN.');
+          }}
+        />
+        <PrimaryButton
+          label={`Use Tailscale (${TAILSCALE_PI_HOST})`}
+          variant="secondary"
+          onPress={async () => {
+            setPiHostDraft(TAILSCALE_PI_HOST);
+            await setPiHost(TAILSCALE_PI_HOST);
+            setMessage('Using Tailscale.');
+          }}
+        />
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.section}>Notifications (Android)</Text>
+        <Text style={styles.meta}>Permission: {notifStatus}</Text>
+        <Text style={styles.hint}>
+          Required for motion alerts. Use a dev build (expo run:android), not Expo Go. Pi
+          must expose POST /auth/fcm (Step 3).
+        </Text>
+        <PrimaryButton
+          label="Re-register push token"
+          loading={pushBusy}
+          onPress={reregisterPush}
+        />
       </View>
 
       <View style={styles.card}>

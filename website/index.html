@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SentriHome — a home security system you actually own</title>
+    <meta
+      name="description"
+      content="A self-hosted home security system: an ESP32 sensor network, an ESP32-S3 console, and a Raspberry Pi hub running OpenCV person detection. No subscription, no cloud bill, no middleman."
+    />
+    <meta name="theme-color" content="#0b0a09" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="SentriHome — a home security system you actually own" />
+    <meta
+      property="og:description"
+      content="An ESP32 sensor network, an ESP32-S3 console, and a Raspberry Pi hub running OpenCV person detection. Built at HackED 2025, then rebuilt without the cloud bill."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <div class="rail" aria-hidden="true"><span class="rail__fill" data-rail></span></div>
+    <a class="skip" href="#pillars">Skip to the engineering breakdown</a>
+
+    <!-- ── Hero ───────────────────────────────────────────────────────────── -->
+    <header class="hero">
+      <div class="shell">
+        <p class="hero__eyebrow t-label">
+          <span class="pulse" aria-hidden="true"></span> Phase 2 · self-hosted · in progress
+        </p>
+
+        <h1 class="hero__title t-display">SentriHome</h1>
+
+        <p class="hero__lede t-body--lead">
+          A home security system you actually own. An ESP32 sensor network, a
+          touchscreen console, and a Raspberry Pi that watches the camera
+          itself — <em>with no monthly bill and nobody else holding your footage.</em>
+        </p>
+
+        <div class="hero__figures">
+          <div class="figure">
+            <p class="figure__value">209</p>
+            <p class="figure__label">Commits</p>
+          </div>
+          <div class="figure">
+            <p class="figure__value">4</p>
+            <p class="figure__label">Contributors</p>
+          </div>
+          <div class="figure">
+            <p class="figure__value">5</p>
+            <p class="figure__label">Devices in the chain</p>
+          </div>
+          <div class="figure">
+            <p class="figure__value">$0</p>
+            <p class="figure__label">Monthly cost</p>
+          </div>
+        </div>
+
+        <nav class="link-row" aria-label="Project links">
+          <a class="link link--lead" href="https://github.com/sinisterchiller/Home-Security" target="_blank" rel="noopener">Phase 2 repo</a>
+          <a class="link link--lead" href="https://github.com/safirhabib/NAIS_SentriHome" target="_blank" rel="noopener">Phase 1 repo</a>
+          <a class="link link--lead" href="https://devpost.com/software/sentrihome" target="_blank" rel="noopener">HackED 2025</a>
+        </nav>
+
+        <p class="hero__hint t-label" aria-hidden="true">Scroll</p>
+      </div>
+    </header>
+
+    <!-- ── Morph story ────────────────────────────────────────────────────── -->
+    <section class="story" data-story aria-label="How the system works">
+      <div class="story__stage" data-stage>
+        <canvas data-canvas aria-hidden="true"></canvas>
+        <p class="story__fallback t-mono" data-fallback hidden>
+          Interactive 3D disabled — the full breakdown is written out below.
+        </p>
+      </div>
+
+      <div class="story__track">
+        <article class="chapter" data-chapter="0" data-pos="b">
+          <div class="chapter__inner">
+            <span class="chapter__index t-label">00 — The premise</span>
+            <h2 class="chapter__title t-statement">
+              You shouldn't have to rent your own front door.
+            </h2>
+            <p class="chapter__body t-body">
+              Ring and Nest work beautifully, right up until you stop paying — and
+              then your recordings are gone. This started from one stubborn
+              question: what would it take to own every layer instead?
+            </p>
+          </div>
+        </article>
+
+        <article class="chapter" data-chapter="1" data-pos="tl">
+          <div class="chapter__inner">
+            <span class="chapter__index t-label">01 — The perimeter</span>
+            <h2 class="chapter__title t-statement">Sensors on a network of their own.</h2>
+            <p class="chapter__body t-body">
+              Motion and door sensors are ESP32-WROOM nodes, and they never touch
+              your home Wi-Fi. They join a separate access point published by the
+              console — so a compromised sensor cannot reach your laptop.
+            </p>
+          </div>
+        </article>
+
+        <article class="chapter" data-chapter="2" data-pos="br">
+          <div class="chapter__inner">
+            <span class="chapter__index t-label">02 — The chain</span>
+            <h2 class="chapter__title t-statement">Five devices, five different jobs.</h2>
+            <p class="chapter__body t-body">
+              A single sensor trip crosses two microcontrollers, a Raspberry Pi and
+              your phone. Every hop is a different processor, a different network
+              and a different failure mode. Deciding who owns what — state,
+              credentials, the camera — was most of the actual engineering.
+            </p>
+          </div>
+        </article>
+
+        <article class="chapter" data-chapter="3" data-pos="tr">
+          <div class="chapter__inner">
+            <span class="chapter__index t-label">03 — The wire</span>
+            <h2 class="chapter__title t-statement">Two chips, one wire, no library to save you.</h2>
+            <p class="chapter__body t-body">
+              The console's radio and its display talk over bare UART, so the
+              protocol is ours to define: a sync word, a command byte, a length,
+              the payload, a checksum. Framing and integrity had to be specified
+              before a single byte moved.
+            </p>
+          </div>
+        </article>
+
+        <article class="chapter" data-chapter="4" data-pos="l">
+          <div class="chapter__inner">
+            <span class="chapter__index t-label">04 — The eye</span>
+            <h2 class="chapter__title t-statement">It knows a person from a cat.</h2>
+            <p class="chapter__body t-body">
+              The Pi runs MobileNet-SSD through OpenCV and only raises an alert for
+              a <strong>person</strong>. A pet or a moving curtain produces frames
+              but never a notification — which is exactly the failure mode that
+              makes naive motion detection unbearable to live with.
+            </p>
+          </div>
+        </article>
+
+        <article class="chapter" data-chapter="5" data-pos="bl">
+          <div class="chapter__inner">
+            <span class="chapter__index t-label">05 — The secrets</span>
+            <h2 class="chapter__title t-statement">Four secrets, four different lifetimes.</h2>
+            <p class="chapter__body t-body">
+              Your Wi-Fi password, the sensor network's key, a per-sensor identity
+              and the disarm PIN are deliberately separate things. Collapsing
+              network trust and application trust into one shared password is how
+              these systems usually fail.
+            </p>
+          </div>
+        </article>
+
+        <article class="chapter" data-chapter="6" data-pos="t">
+          <div class="chapter__inner">
+            <span class="chapter__index t-label">06 — The cloud, deleted</span>
+            <h2 class="chapter__title t-statement">Then we removed the monthly bill.</h2>
+            <p class="chapter__body t-body">
+              Phase 1 leaned on a rented server and object storage. Phase 2 moved
+              the hub into the house: the Pi owns the camera, fans one feed out to
+              live video and recording, and pushes clips to your own Drive.
+            </p>
+          </div>
+        </article>
+
+        <article class="chapter" data-chapter="7" data-pos="center">
+          <div class="chapter__inner">
+            <span class="chapter__index t-label">07 — What's next</span>
+            <h2 class="chapter__title t-statement">One pipeline, more things plugged into it.</h2>
+            <p class="chapter__body t-body">
+              Every new device — window sensors, a curtain that closes when an
+              alert fires, a local siren — is worth building only because the
+              event pipeline underneath is already the same for all of them.
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ── Pillars ────────────────────────────────────────────────────────── -->
+    <section class="section" id="pillars">
+      <div class="shell">
+        <div class="section__head">
+          <span class="section__label t-label">The engineering</span>
+          <h2 class="t-statement">Seven problems worth talking about</h2>
+          <p class="section__lede t-body--lead">
+            Every claim carries its real status. Nothing is called shipped unless
+            you can run it today.
+          </p>
+          <div class="legend">
+            <span><span class="status status--shipped">Shipped</span><span class="t-mono">runs now</span></span>
+            <span><span class="status status--partial">Partial</span><span class="t-mono">real, incomplete</span></span>
+            <span><span class="status status--designed">Designed</span><span class="t-mono">specified, not built</span></span>
+          </div>
+        </div>
+
+        <ol class="pillars">
+          <li class="pillar">
+            <span class="pillar__num">01</span>
+            <h3 class="pillar__title t-heading">Distributed multi-device architecture</h3>
+            <div class="pillar__body">
+              <p class="t-body">
+                Five components with genuinely separate responsibilities across
+                three networks: sensor nodes, a console, a Pi hub, a mobile client
+                and storage. Boundaries are explicit — the Pi owns the camera and
+                system state, the console owns the keypad and the PIN.
+              </p>
+              <div class="pillar__notes">
+                <p class="note">Pi hub, mobile client and storage run today</p>
+                <p class="note note--gap">Console-to-hub transport still an open decision</p>
+              </div>
+            </div>
+            <span class="pillar__status status status--partial">Partial</span>
+          </li>
+
+          <li class="pillar">
+            <span class="pillar__num">02</span>
+            <h3 class="pillar__title t-heading">A custom wire protocol</h3>
+            <div class="pillar__body">
+              <p class="t-body">
+                <code>SYNC · CMD · LEN · PAYLOAD · CRC</code> — framing, a defined
+                command set, length-prefixed payloads, integrity checks, timeouts,
+                acknowledgements and explicit handling for corrupt frames.
+                Specified in full before implementation, because debugging an
+                unframed serial link is misery.
+              </p>
+              <div class="pillar__notes">
+                <p class="note">Complete specification in the architecture document</p>
+                <p class="note note--gap">Firmware is receive-only so far</p>
+              </div>
+            </div>
+            <span class="pillar__status status status--designed">Designed</span>
+          </li>
+
+          <li class="pillar pillar--feature">
+            <span class="pillar__num">03</span>
+            <h3 class="pillar__title t-heading">On-device computer vision</h3>
+            <div class="pillar__body">
+              <p class="t-body">
+                MobileNet-SSD via OpenCV's DNN module, running on the Pi against
+                the shared camera feed. Detection is
+                <strong>class-gated, not motion-gated</strong>: only a person
+                raises an event, and a cooldown collapses one intruder into one
+                alert instead of twenty.
+              </p>
+              <p class="t-body">
+                Two decisions made it survivable. Inference is decoupled from frame
+                rate, so a slow model never backs up the video buffer. And it reads
+                the network stream rather than the camera device, because exactly
+                one process is allowed to own the hardware.
+              </p>
+              <div class="pillar__notes">
+                <p class="note">17 unit tests, no camera required to run them</p>
+                <p class="note">Model weights verified by checksum, never committed</p>
+              </div>
+            </div>
+            <span class="pillar__status status status--shipped">Shipped</span>
+          </li>
+
+          <li class="pillar">
+            <span class="pillar__num">04</span>
+            <h3 class="pillar__title t-heading">Bounded retry and recovery</h3>
+            <div class="pillar__body">
+              <p class="t-body">
+                Failures are enumerated rather than lumped into "connection
+                failed": missing network, weak signal, serial timeout, a device
+                rebooting mid-provision. Retries back off, then <em>stop</em> and
+                report — instead of spinning forever and hiding a dead component
+                behind a busy log.
+              </p>
+              <div class="pillar__notes">
+                <p class="note">Shipped and unit-tested in the detector</p>
+                <p class="note note--gap">Firmware failure table not fully implemented</p>
+              </div>
+            </div>
+            <span class="pillar__status status status--partial">Partial</span>
+          </li>
+
+          <li class="pillar">
+            <span class="pillar__num">05</span>
+            <h3 class="pillar__title t-heading">Secure device provisioning</h3>
+            <div class="pillar__body">
+              <p class="t-body">
+                An unconfigured device publishes its own setup network with
+                unique-per-unit credentials, takes Wi-Fi details over that isolated
+                link, then generates and distributes a sensor-network key.
+                Credentials live in memory during setup and in flash afterwards —
+                never in the repository.
+              </p>
+              <div class="pillar__notes">
+                <p class="note">Setup wizard, PIN and key generation run today</p>
+                <p class="note note--gap">Per-sensor identity not in firmware yet</p>
+              </div>
+            </div>
+            <span class="pillar__status status status--partial">Partial</span>
+          </li>
+
+          <li class="pillar">
+            <span class="pillar__num">06</span>
+            <h3 class="pillar__title t-heading">Local-first edge computing</h3>
+            <div class="pillar__body">
+              <p class="t-body">
+                A security system that stops working when the internet does is not
+                a security system. One process owns the camera and fans a single
+                feed out to live view, recording and detection at once. All three
+                are local; the network is only needed to tell you.
+              </p>
+              <div class="pillar__notes">
+                <p class="note">One publisher, three consumers, no contention</p>
+              </div>
+            </div>
+            <span class="pillar__status status status--shipped">Shipped</span>
+          </li>
+
+          <li class="pillar">
+            <span class="pillar__num">07</span>
+            <h3 class="pillar__title t-heading">Deployment and operations</h3>
+            <div class="pillar__body">
+              <p class="t-body">
+                One command pushes the hub to the Pi, runs the test suite before
+                installing, and manages three services with a boot rule that stops
+                the setup server and the product hub ever fighting over the same
+                port. Health and detector state are queryable over HTTP.
+              </p>
+              <div class="pillar__notes">
+                <p class="note">Scripted deploy, service units, tests gate install</p>
+                <p class="note note--gap">No hosted CI pipeline yet</p>
+              </div>
+            </div>
+            <span class="pillar__status status status--partial">Partial</span>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ── Phases ─────────────────────────────────────────────────────────── -->
+    <section class="section" id="phases">
+      <div class="shell">
+        <div class="section__head">
+          <span class="section__label t-label">The arc</span>
+          <h2 class="t-statement">Three phases, one system</h2>
+          <p class="section__lede t-body--lead">
+            The same product rebuilt twice, each time to remove a dependency we
+            didn't want to live with.
+          </p>
+        </div>
+
+        <ol class="phases">
+          <li class="phase">
+            <div class="phase__aside">
+              <span class="phase__num">Phase 1</span>
+              <span class="status status--shipped">Shipped</span>
+            </div>
+            <div class="phase__body">
+              <h3 class="phase__title t-heading">The cloud version</h3>
+              <p class="t-body">
+                Built at <strong>HackED 2025</strong>. A Raspberry Pi and a cheap
+                camera, an ESP32 for Wi-Fi provisioning, a Node.js backend on a
+                rented EC2 instance storing clips in S3, and an Android app in
+                Jetpack Compose. Alerts arrived over server-sent events in under a
+                second: a full-screen "was it you?" prompt, one tap from a 911 call.
+              </p>
+              <p class="t-body">
+                It worked end to end — hardware to cloud to phone. It also arrived
+                with a monthly bill and someone else's servers holding the footage.
+              </p>
+              <ul class="stack">
+                <li>Raspberry Pi + camera</li>
+                <li>ESP32 provisioning</li>
+                <li>Node.js on EC2</li>
+                <li>Clips in S3</li>
+                <li>HLS live view</li>
+                <li>SSE alerts</li>
+                <li>Jetpack Compose</li>
+                <li>Guest OTP codes</li>
+                <li>Scheduled arming</li>
+              </ul>
+            </div>
+          </li>
+
+          <li class="phase">
+            <div class="phase__aside">
+              <span class="phase__num">Phase 2</span>
+              <span class="status status--shipped">You are here</span>
+            </div>
+            <div class="phase__body">
+              <h3 class="phase__title t-heading">Self-hosted, and it can see</h3>
+              <p class="t-body">
+                Everything Phase 1 did, with the rented infrastructure removed. The
+                Pi is the hub: it owns the camera, publishes one feed that live
+                video, recording and detection all share, caches clips locally and
+                uploads to <em>your</em> Drive. Remote viewing goes through a
+                private tunnel.
+              </p>
+              <p class="t-body">
+                And the thing Phase 1 listed as future work is now real:
+                <strong>OpenCV object detection runs on the Pi</strong> and tells a
+                person from a pet before deciding to wake you. The sensors grew into
+                a proper ESP32-S3 console with a touchscreen and keypad, and the app
+                was rebuilt in React Native.
+              </p>
+              <ul class="stack">
+                <li>ESP32-S3 console</li>
+                <li>Keypad PIN disarm</li>
+                <li>ESP32 motion sensors</li>
+                <li>Raspberry Pi hub</li>
+                <li>OpenCV person detection</li>
+                <li>WebRTC live view</li>
+                <li>Clips to your Drive</li>
+                <li>Private tunnel</li>
+                <li>React Native app</li>
+                <li class="retired">EC2 + S3</li>
+              </ul>
+            </div>
+          </li>
+
+          <li class="phase">
+            <div class="phase__aside">
+              <span class="phase__num">Phase 3</span>
+              <span class="status status--designed">Planned</span>
+            </div>
+            <div class="phase__body">
+              <h3 class="phase__title t-heading">A self-hosted ecosystem</h3>
+              <p class="t-body">
+                The event pipeline is the product. Phase 3 plugs more of the house
+                into it: window and door contacts on the same relay, a smart curtain
+                that physically closes when an alert fires, zone arming so you can
+                sleep with the upstairs disarmed, and a local siren so the house
+                still responds with the internet down.
+              </p>
+              <p class="t-body">
+                The infrastructure work that unlocks it: closing the console-to-hub
+                transport, over-the-air firmware updates, and letting the camera and
+                the sensor network corroborate each other instead of alerting
+                independently.
+              </p>
+              <ul class="stack">
+                <li>Window / door contacts</li>
+                <li>Smart curtain actuation</li>
+                <li>Zone arming</li>
+                <li>Local siren</li>
+                <li>OTA updates</li>
+                <li>Sensor + vision corroboration</li>
+              </ul>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ── HackED ─────────────────────────────────────────────────────────── -->
+    <section class="section" id="hacked">
+      <div class="shell">
+        <div class="hacked">
+          <div>
+            <span class="section__label t-label">Where it started</span>
+            <h2 class="t-statement">HackED 2025</h2>
+            <p class="section__lede t-body--lead">
+              Phase 1 was built at HackED, and the writeup ends with a list of what
+              we wanted next — including "an AI layer that can tell the difference
+              between a person and a cat before it wakes you up at 3am."
+            </p>
+            <p class="pull">That line is now a shipped feature with tests.</p>
+            <a class="link link--lead" href="https://devpost.com/software/sentrihome" target="_blank" rel="noopener">Read the Devpost writeup</a>
+          </div>
+          <blockquote class="quote">
+            <p>
+              Integration was the hardest part. Every layer worked fine in
+              isolation and broke the moment it had to talk to the next one.
+            </p>
+            <footer>The Phase 1 writeup, on the actual lesson</footer>
+          </blockquote>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Team ───────────────────────────────────────────────────────────── -->
+    <section class="section" id="team">
+      <div class="shell">
+        <div class="section__head">
+          <span class="section__label t-label">The team</span>
+          <h2 class="t-statement">Four people, 209 commits</h2>
+        </div>
+
+        <ul class="people">
+          <li class="person">
+            <img src="https://github.com/sinisterchiller.png?size=120" alt="" width="40" height="40" loading="lazy" />
+            <span class="person__name t-sub">Anurag Koushik</span>
+            <span class="person__commits">92</span>
+            <a class="person__handle" href="https://github.com/sinisterchiller" target="_blank" rel="noopener">@sinisterchiller</a>
+          </li>
+          <li class="person">
+            <img src="https://github.com/safirhabib.png?size=120" alt="" width="40" height="40" loading="lazy" />
+            <span class="person__name t-sub">Safir Habib</span>
+            <span class="person__commits">58</span>
+            <a class="person__handle" href="https://github.com/safirhabib" target="_blank" rel="noopener">@safirhabib</a>
+          </li>
+          <li class="person">
+            <img src="https://github.com/NeazMZ06.png?size=120" alt="" width="40" height="40" loading="lazy" />
+            <span class="person__name t-sub">Neaz Mohammad Zahir</span>
+            <span class="person__commits">32</span>
+            <a class="person__handle" href="https://github.com/NeazMZ06" target="_blank" rel="noopener">@NeazMZ06</a>
+          </li>
+          <li class="person">
+            <img src="https://github.com/Ishayat17.png?size=120" alt="" width="40" height="40" loading="lazy" />
+            <span class="person__name t-sub">Ishayat Arik Chowdhury</span>
+            <span class="person__commits">27</span>
+            <a class="person__handle" href="https://github.com/Ishayat17" target="_blank" rel="noopener">@Ishayat17</a>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ── Closing ────────────────────────────────────────────────────────── -->
+    <section class="section closing" id="contribute">
+      <div class="shell">
+        <div class="section__head">
+          <h2 class="t-statement">Want to build on it?</h2>
+          <p class="section__lede t-body--lead">
+            The architecture document is the source of truth, and the open
+            decisions are written down rather than hidden — including the one
+            blocking the console-to-hub link. That's the most useful place to start.
+          </p>
+        </div>
+        <nav class="link-row" aria-label="Contribute links">
+          <a class="link link--lead" href="https://github.com/sinisterchiller/Home-Security" target="_blank" rel="noopener">Contribute on GitHub</a>
+          <a class="link link--lead" href="https://github.com/sinisterchiller/Home-Security/blob/main/README.md" target="_blank" rel="noopener">Read the architecture</a>
+          <a class="link link--lead" href="https://github.com/sinisterchiller/Home-Security/issues" target="_blank" rel="noopener">Open issues</a>
+        </nav>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="shell">
+        <p class="t-mono">Self-hosted home security. Built by four people who wanted to own their own footage.</p>
+        <p class="footer__links t-mono">
+          <a href="https://github.com/sinisterchiller/Home-Security" target="_blank" rel="noopener">Phase 2</a>
+          <a href="https://github.com/safirhabib/NAIS_SentriHome" target="_blank" rel="noopener">Phase 1</a>
+          <a href="https://devpost.com/software/sentrihome" target="_blank" rel="noopener">Devpost</a>
+        </p>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

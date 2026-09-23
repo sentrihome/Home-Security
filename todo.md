@@ -154,9 +154,9 @@ Mostly Storyboard-side work; cross-check against §14.
 
 ## Phase 8 — Clips (Drive)
 
-- [ ] Implement Google OAuth in the app (`access_type=offline`, `drive.file` scope) and the token handoff to the Pi (§18) — LAN/Tailscale only, encrypted at rest on the Pi, never logged.
+- [ ] Implement Google OAuth in the app (`access_type=offline`, `drive.file` scope) and the token handoff to the Pi (§18) — LAN/Tailscale only. **Phone guide:** `DOCUMENTATION.md`. Pi already stores the token encrypted and uploads.
 
-- [ ] Implement Pi-side cache-then-upload pipeline (§17).
+- [x] Implement Pi-side cache-then-upload pipeline (§17). `pi_hub/drive.py` uploads to a `SentriHome` folder once `/auth/drive` has credentials.
 
 - [ ] Implement app-side clip listing/playback directly from Drive (not via Tailscale — confirmed this path must work on cellular with Tailscale off).
 
@@ -201,7 +201,11 @@ Can run in parallel with software phases once Phase 1 step 3's credential deriva
 Don't let these creep into v1 scope:
 
 - Bluetooth speaker pairing as a local siren
-- Camera-based motion detection
+- ~~Camera-based motion detection~~ — **shipped early**, ahead of this roadmap:
+  `pi_hub.detect` runs MobileNet-SSD over OpenCV DNN on the shared MediaMTX RTSP
+  feed and raises person-gated events through `pi_hub.events`. It does not replace
+  the PIR sensor path (§19) — the two are independent triggers into the same clip
+  pipeline. See `rasberry-pi-setup/PI-SOFTAP-README.md`.
 - Partial/zone arming ("stay" vs. "away" modes)
 - Auto-arm/auto-disarm via schedule or geofencing
 - OTA update mechanism (§22 #7 — needed before wide field deployment, but not for a first working unit)

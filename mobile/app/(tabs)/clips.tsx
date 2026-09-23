@@ -1,81 +1,179 @@
 import { useCallback, useState } from 'react';
-import { FlatList, Image, StyleSheet } from 'react-native';
-import { Link } from 'expo-router';
+import {
+  FlatList,
+  Image,
+  Linking,
+  StyleSheet,
+  TouchableOpacity,
+} from 'react-native';
+import { Link, useFocusEffect } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 
 import { Text, View } from '@/components/Themed';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { useAuth } from '@/context/AuthContext';
-import { cloudApi } from '@/lib/api';
-import type { EventClip } from '@/types';
+import { useSetupWizard } from '@/context/SetupWizardContext';
+import { piApi } from '@/lib/api';
+import { DRIVE_FOLDER_NAME, listDriveClips, type DriveClip } from '@/lib/driveClips';
+
+type ClipRow = {
+  key: string;
+  name: string;
+  createdLabel: string;
+  source: 'drive' | 'pi';
+  playUrl?: string;
+  thumbnail?: string;
+  size?: number;
+};
+
+function formatBytes(n?: number): string {
+  if (!n) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function ClipsScreen() {
-  const { isLoggedIn, session, cloudBaseUrl } = useAuth();
-  const [events, setEvents] = useState<EventClip[]>([]);
-  const [message, setMessage] = useState(
-    isLoggedIn ? 'Tap load to fetch your clips.' : 'Sign in to view your clips.'
-  );
+  const { isLoggedIn } = useAuth();
+  const { piBaseUrl } = useSetupWizard();
+  const [items, setItems] = useState<ClipRow[]>([]);
+  const [message, setMessage] = useState('Pull to refresh or tap Load.');
   const [loading, setLoading] = useState(false);
 
   const loadClips = useCallback(async () => {
-    if (!session?.token) return;
     setLoading(true);
-    try {
-      const list = await cloudApi.events(session.token, cloudBaseUrl);
-      setEvents(Array.isArray(list) ? list : []);
-      setMessage(`Loaded ${Array.isArray(list) ? list.length : 0} events`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Failed to load clips');
-      setEvents([]);
-    } finally {
-      setLoading(false);
+    const rows: ClipRow[] = [];
+    const notes: string[] = [];
+
+    if (isLoggedIn) {
+      try {
+        const drive = await listDriveClips();
+        for (const c of drive) {
+          rows.push(driveToRow(c));
+        }
+        notes.push(`Drive ${DRIVE_FOLDER_NAME}: ${drive.length}`);
+      } catch (error) {
+        notes.push(
+          `Drive: ${error instanceof Error ? error.message : 'list failed'}`
+        );
+      }
+    } else {
+      notes.push('Sign in with Google to list Drive clips (works off Wi-Fi).');
     }
-  }, [session, cloudBaseUrl]);
+
+    try {
+      const cache = await piApi.clipsCache(piBaseUrl);
+      const local = Array.isArray(cache.clips) ? cache.clips : [];
+      const driveNames = new Set(rows.map((r) => r.name));
+      let added = 0;
+      for (const c of local) {
+        if (driveNames.has(c.name)) continue;
+        rows.push({
+          key: `pi:${c.name}`,
+          name: c.name,
+          createdLabel: c.mtime
+            ? new Date(c.mtime * 1000).toLocaleString()
+            : 'On Pi (not uploaded yet)',
+          source: 'pi',
+          playUrl: piApi.clipFileUrl(c.name, piBaseUrl),
+          size: c.size,
+        });
+        added += 1;
+      }
+      notes.push(`Pi cache: ${local.length} (${added} not in Drive)`);
+    } catch {
+      notes.push('Pi cache unreachable (need home Wi-Fi for un-uploaded clips).');
+    }
+
+    rows.sort((a, b) => b.createdLabel.localeCompare(a.createdLabel));
+    setItems(rows);
+    setMessage(notes.join(' · '));
+    setLoading(false);
+  }, [isLoggedIn, piBaseUrl]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadClips();
+    }, [loadClips])
+  );
+
+  async function openClip(row: ClipRow) {
+    if (!row.playUrl) return;
+    try {
+      if (row.source === 'drive') {
+        await WebBrowser.openBrowserAsync(row.playUrl);
+        return;
+      }
+      const supported = await Linking.canOpenURL(row.playUrl);
+      if (supported) {
+        await Linking.openURL(row.playUrl);
+      } else {
+        await WebBrowser.openBrowserAsync(row.playUrl);
+      }
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Could not open clip');
+    }
+  }
 
   return (
     <Screen
       title="Saved clips"
-      subtitle="Events from the cloud backend (S3 / Drive)."
+      subtitle={`Drive folder ${DRIVE_FOLDER_NAME}. Pi cache shows clips that have not uploaded yet.`}
       scroll={false}>
       {!isLoggedIn ? (
         <View style={styles.card}>
-          <Text>Sign in with Google Drive to view your clips.</Text>
+          <Text>Sign in with Google to list SentriHome clips from Drive.</Text>
           <Link href="/login" asChild>
             <PrimaryButton label="Sign in" />
           </Link>
         </View>
-      ) : (
-        <>
-          <PrimaryButton label="Load clips" loading={loading} onPress={loadClips} />
-          <Text style={styles.message}>{message}</Text>
-          <FlatList
-            data={events}
-            keyExtractor={(item) => item._id}
-            contentContainerStyle={styles.list}
-            ListEmptyComponent={
-              <Text style={styles.empty}>No clips yet.</Text>
-            }
-            renderItem={({ item }) => (
-              <View style={styles.row}>
-                <Image
-                  source={{
-                    uri: cloudApi.thumbnailUrl(item._id, session?.token, cloudBaseUrl),
-                  }}
-                  style={styles.thumb}
-                />
-                <View style={styles.rowBody}>
-                  <Text style={styles.rowTitle}>{item._id}</Text>
-                  <Text style={styles.rowMeta}>
-                    {item.createdAt ? new Date(item.createdAt).toLocaleString() : '—'}
-                  </Text>
-                </View>
+      ) : null}
+      <PrimaryButton label="Load clips" loading={loading} onPress={loadClips} />
+      <Text style={styles.message}>{message}</Text>
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.key}
+        contentContainerStyle={styles.list}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            {loading ? 'Loading…' : 'No clips yet. Trigger motion or POST /motion after Drive is linked.'}
+          </Text>
+        }
+        renderItem={({ item }) => (
+          <TouchableOpacity style={styles.row} onPress={() => openClip(item)}>
+            {item.thumbnail ? (
+              <Image source={{ uri: item.thumbnail }} style={styles.thumb} />
+            ) : (
+              <View style={[styles.thumb, styles.thumbPlaceholder]}>
+                <Text style={styles.thumbLabel}>{item.source === 'drive' ? 'D' : 'Pi'}</Text>
               </View>
             )}
-          />
-        </>
-      )}
+            <View style={styles.rowBody}>
+              <Text style={styles.rowTitle}>{item.name}</Text>
+              <Text style={styles.rowMeta}>
+                {item.source === 'drive' ? 'Google Drive' : 'On Pi (not in Drive yet)'}
+                {item.size ? ` · ${formatBytes(item.size)}` : ''}
+              </Text>
+              <Text style={styles.rowMeta}>{item.createdLabel}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+      />
     </Screen>
   );
+}
+
+function driveToRow(c: DriveClip): ClipRow {
+  return {
+    key: `drive:${c.id}`,
+    name: c.name,
+    createdLabel: c.createdTime ? new Date(c.createdTime).toLocaleString() : 'Drive',
+    source: 'drive',
+    playUrl: c.webViewLink,
+    thumbnail: c.thumbnailLink,
+    size: c.size,
+  };
 }
 
 const styles = StyleSheet.create({
@@ -109,6 +207,15 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 6,
     backgroundColor: '#e5e7eb',
+  },
+  thumbPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    opacity: 0.6,
   },
   rowBody: {
     flex: 1,

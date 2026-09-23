@@ -1,99 +1,61 @@
-"""On-demand ffmpeg HLS live stream (LAN / Tailscale).
+"""On-demand live session — WebRTC via MediaMTX (does not open /dev/video0).
 
-One process owns /dev/video0 — do not run a separate camera daemon.
+Camera ownership lives in camera.py (ffmpeg → MediaMTX).
 """
 
 from __future__ import annotations
 
 import logging
-import subprocess
-from pathlib import Path
-from typing import Optional
 
-from . import config
+from . import camera, config
 
 log = logging.getLogger("pi_hub.live")
 
-_ffmpeg: Optional[subprocess.Popen] = None
+# Client "watching live" session — independent of publisher lifetime
+_session_active = False
 
 
 def is_streaming() -> bool:
-    return _ffmpeg is not None and _ffmpeg.poll() is None
+    return _session_active and camera.is_publishing()
 
 
 def start(type_: str = "manual", value: str = "") -> dict:
-    """Start ffmpeg → HLS under config.HLS_DIR. Stub until camera is wired."""
-    global _ffmpeg
+    """Ensure publisher is up; mark live session active; return WebRTC URLs."""
+    global _session_active
 
-    if is_streaming():
-        return {"ok": True, "streaming": True, "message": "already streaming"}
-
-    config.HLS_DIR.mkdir(parents=True, exist_ok=True)
-    playlist = config.HLS_DIR / config.HLS_PLAYLIST_NAME
-
-    # Placeholder command — replace with real device/format flags on the Pi.
-    # Intentionally not started until VIDEO_DEVICE is confirmed present.
-    if not Path(config.VIDEO_DEVICE).exists():
-        log.warning("No camera at %s — live start is a no-op stub", config.VIDEO_DEVICE)
+    pub = camera.ensure_publisher()
+    if not pub.get("ok"):
+        _session_active = False
         return {
-            "ok": True,
+            "ok": False,
             "streaming": False,
-            "stub": True,
-            "message": f"camera missing at {config.VIDEO_DEVICE}",
-            "type": type_,
-            "value": value,
-            "playlist": f"/hls/{config.HLS_PLAYLIST_NAME}",
+            "error": pub.get("error", "publisher failed"),
+            "publisher": pub,
         }
 
-    cmd = [
-        config.FFMPEG_BIN,
-        "-f",
-        "v4l2",
-        "-i",
-        config.VIDEO_DEVICE,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-f",
-        "hls",
-        "-hls_time",
-        "2",
-        "-hls_list_size",
-        "5",
-        "-hls_flags",
-        "delete_segments",
-        str(playlist),
-    ]
-    log.info("Starting live: %s", " ".join(cmd))
-    _ffmpeg = subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-    )
+    _session_active = True
+    urls = config.webrtc_urls()
+    log.info("Live session start type=%s webrtc=%s", type_, urls["lan"])
     return {
         "ok": True,
         "streaming": True,
         "type": type_,
         "value": value,
-        "playlist": f"/hls/{config.HLS_PLAYLIST_NAME}",
+        "webrtc_url": urls["lan"],
+        "webrtc": urls,
+        "publisher": pub,
     }
 
 
 def stop() -> dict:
-    """Stop the ffmpeg HLS process if running."""
-    global _ffmpeg
+    """End live session only — publisher stays up for clips."""
+    global _session_active
 
-    if _ffmpeg is None or _ffmpeg.poll() is not None:
-        _ffmpeg = None
-        return {"ok": True, "streaming": False, "message": "not streaming"}
-
-    log.info("Stopping live stream (pid=%s)", _ffmpeg.pid)
-    _ffmpeg.terminate()
-    try:
-        _ffmpeg.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        _ffmpeg.kill()
-        _ffmpeg.wait(timeout=2)
-    _ffmpeg = None
-    return {"ok": True, "streaming": False}
+    _session_active = False
+    log.info("Live session stop (publisher left running for clips)")
+    return {
+        "ok": True,
+        "streaming": False,
+        "publishing": camera.is_publishing(),
+        "message": "session stopped; camera publisher still running",
+    }

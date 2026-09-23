@@ -1,8 +1,9 @@
 #!/bin/bash
-# Start MediaMTX for the WebRTC lab (foreground by default).
+# Start MediaMTX for the WebRTC / shared-feed lab (foreground by default).
 # Usage:
 #   ./webrtc-lab-mediamtx.sh           # foreground
 #   ./webrtc-lab-mediamtx.sh --bg      # background + log
+# Prefer: sudo systemctl start mediamtx
 
 set -euo pipefail
 
@@ -19,7 +20,7 @@ fi
 BIN="$(command -v mediamtx || echo /usr/local/bin/mediamtx)"
 
 if [ ! -f "$CFG" ] && [ -f "$REPO_CFG" ]; then
-  echo "Using repo config $REPO_CFG (copy to $CFG for systemd later)"
+  echo "Using repo config $REPO_CFG"
   CFG="$REPO_CFG"
 fi
 
@@ -34,7 +35,6 @@ if [ "${1:-}" = "--bg" ]; then
   sleep 1
   nohup "$BIN" "$CFG" >"$LOG_DIR/mediamtx.log" 2>&1 &
   echo "mediamtx pid=$! log=$LOG_DIR/mediamtx.log"
-  echo "WebRTC: http://192.168.0.236:8889/cam  (or http://100.66.51.106:8889/cam)"
   exit 0
 fi
 

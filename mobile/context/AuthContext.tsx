@@ -85,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       cloudBaseUrl,
       isLoading,
-      isLoggedIn: Boolean(session?.token && session?.refreshToken),
+      isLoggedIn: Boolean(session?.token && session?.email),
       setCloudBaseUrl,
       signIn,
       signOut,

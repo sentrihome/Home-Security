@@ -1,4 +1,4 @@
-"""Local clip cache — record on motion, then hand off to Drive upload."""
+"""Local clip cache — record from MediaMTX RTSP (not /dev/video0)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from . import config, live
+from . import camera, config
 
 log = logging.getLogger("pi_hub.clips")
 
@@ -17,67 +17,76 @@ def ensure_dirs() -> None:
     config.CLIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def record_clip(duration_sec: float = 10.0) -> Optional[Path]:
+def record_clip(duration_sec: float | None = None) -> Optional[Path]:
     """
-    Record a short clip into the local cache with ffmpeg.
+    Record a short clip by reading MediaMTX path `cam` over RTSP.
 
-    Stops live streaming first if needed so live and clips don't fight
-    over /dev/video0.
+    Live WebRTC readers keep working — only the publisher holds /dev/video0.
     """
+    duration = float(duration_sec if duration_sec is not None else config.CLIP_DURATION_SEC)
     ensure_dirs()
 
-    if live.is_streaming():
-        log.info("Stopping live stream before clip record")
-        live.stop()
+    pub = camera.ensure_publisher()
+    if not pub.get("ok"):
+        log.error("Cannot record: publisher not up (%s)", pub.get("error"))
+        return None
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out = config.CLIP_CACHE_DIR / f"clip-{stamp}.mp4"
 
-    if not Path(config.VIDEO_DEVICE).exists():
-        log.error("No camera at %s", config.VIDEO_DEVICE)
-        return None
-
-    cmd = [
+    # Prefer stream copy (low CPU); fall back to re-encode if needed
+    cmd_copy = [
         config.FFMPEG_BIN,
         "-y",
-        "-f",
-        "v4l2",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-rtsp_transport",
+        "tcp",
         "-i",
-        config.VIDEO_DEVICE,
+        config.MEDIAMTX_RTSP_URL,
         "-t",
-        str(duration_sec),
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-pix_fmt",
-        "yuv420p",
+        str(duration),
+        "-c",
+        "copy",
         str(out),
     ]
-    log.info("Recording clip: %s", " ".join(cmd))
+    log.info("Recording clip %ss → %s", duration, out)
+    result = subprocess.run(cmd_copy, capture_output=True, text=True, timeout=duration + 30)
 
-    try:
-        result = subprocess.run(
-            cmd,
-            check=True,
-            capture_output=True,
-            timeout=duration_sec + 30,
-        )
-        if result.stderr:
-            log.debug("ffmpeg stderr: %s", result.stderr.decode(errors="replace")[-500:])
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        log.error("ffmpeg failed: %s", e)
-        if isinstance(e, subprocess.CalledProcessError) and e.stderr:
-            log.error("ffmpeg stderr: %s", e.stderr.decode(errors="replace")[-1000:])
+    if result.returncode != 0 or not out.exists() or out.stat().st_size < 1000:
+        log.warning("stream copy failed (%s); retrying with re-encode", result.stderr[-200:])
         if out.exists():
             out.unlink(missing_ok=True)
-        return None
+        cmd_enc = [
+            config.FFMPEG_BIN,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-rtsp_transport",
+            "tcp",
+            "-i",
+            config.MEDIAMTX_RTSP_URL,
+            "-t",
+            str(duration),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-pix_fmt",
+            "yuv420p",
+            "-an",
+            str(out),
+        ]
+        result = subprocess.run(cmd_enc, capture_output=True, text=True, timeout=duration + 60)
+        if result.returncode != 0 or not out.exists() or out.stat().st_size < 1000:
+            log.error("clip record failed: %s", result.stderr[-500:])
+            if out.exists():
+                out.unlink(missing_ok=True)
+            return None
 
-    if not out.exists() or out.stat().st_size == 0:
-        log.error("Clip missing or empty: %s", out)
-        return None
-
-    log.info("Clip saved: %s (%s bytes)", out, out.stat().st_size)
+    log.info("Clip saved %s (%s bytes)", out.name, out.stat().st_size)
     return out
 
 
@@ -93,4 +102,3 @@ def list_cached() -> list[dict]:
         }
         for p in clips
     ]
-

@@ -1,30 +1,15 @@
-# Pi SoftAP + Product Hub
+# Pi SoftAP Provisioning System
 
-Automatic WiFi setup (SoftAP) and the local-first product hub for the Raspberry Pi.
-
-**Architecture decision (README D20):** SoftAP stays Python; live HLS + clips + Drive run as **one** `pi_hub` process after home Wi‑Fi. Do not revive the old Node `rasberry_pi_app` / cloud backend as the product path. Full product story: repo root [`README.md`](../README.md) §13.
+Automatic WiFi setup for Raspberry Pi using SoftAP (Access Point) mode.
 
 ## How It Works
 
-1. **Unconfigured Pi boots** → SoftAP `HomeSecurity-Setup` + setup API on `10.42.0.1:4000`
+1. **Unconfigured Pi boots** → starts SoftAP "HomeSecurity-Setup" + HTTP API on `10.42.0.1:4000`
 2. **Phone joins hotspot** → app discovers Pi at `10.42.0.1`
 3. **App sends credentials** → `POST /wifi` with home WiFi SSID/password
-4. **Pi switches to home WiFi** → static IP `192.168.0.236`
-5. **Future boots** → join home WiFi → start **`pi_hub`** on `:4000` (not the SoftAP API)
-
-```
-Boot → pi-setup.service → pi-setup-boot.sh
-         │
-         ├─ no / bad Wi‑Fi  → SoftAP + pi-setup-api.py :4000
-         │                     (GET /status, /scan, POST /wifi)
-         │                     hub stopped; .hub-ready removed
-         │
-         └─ Wi‑Fi OK        → touch ~/homesecurity/.hub-ready
-                              → systemctl start pi-hub
-                              → one Flask app :4000 (live + clips + Drive)
-```
-
-SoftAP and hub **never** both bind `:4000`. Live and clips share one process so they do not fight over `/dev/video0`.
+4. **Pi switches to home WiFi** → saves credentials, connects as normal client
+5. **Future boots (prod)** → Pi joins home WiFi (no SoftAP)
+6. **DEV boots (`pie-dev-testing`)** → git pull, wipe wifi + Drive token + clip cache, SoftAP. After Google token **and** home WiFi creds, join LAN and start the hub.
 
 ## Architecture
 
@@ -33,10 +18,10 @@ SoftAP and hub **never** both bind `:4000`. Live and clips share one process so 
 │                    Pi Boot Sequence                      │
 ├─────────────────────────────────────────────────────────┤
 │  1. systemd starts pi-setup.service                      │
-│  2. pi-setup-boot.sh checks wifi-credentials.json        │
+│  2. pi-setup-boot.sh checks /home/koushik/wifi-creds.json│
 │                                                           │
 │  IF configured → connect to home WiFi ────────────────┐  │
-│  IF NOT → start SoftAP + setup API                    │  │
+│  IF NOT → start SoftAP + API                          │  │
 │                                                        │  │
 │  ┌──────────────────────────────────┐                │  │
 │  │  SoftAP Mode (First Boot)        │                │  │
@@ -44,44 +29,105 @@ SoftAP and hub **never** both bind `:4000`. Live and clips share one process so 
 │  │  • SSID: HomeSecurity-Setup      │                │  │
 │  │  • Password: setup1234           │                │  │
 │  │  • Pi IP: 10.42.0.1              │                │  │
-│  │  • API: :4000 (setup only)       │                │  │
+│  │  • DHCP: 10.42.0.10–.254         │                │  │
+│  │  • API: :4000                    │                │  │
 │  └──────────────────────────────────┘                │  │
 │                                                        │  │
 │  ┌──────────────────────────────────┐                │  │
-│  │  Hub Mode (After Setup)          │◄───────────────┘  │
+│  │  Normal Mode (After Setup)       │◄───────────────┘  │
 │  ├──────────────────────────────────┤                   │
-│  │  • Home WiFi @ 192.168.0.236     │                   │
-│  │  • pi_hub on :4000               │                   │
-│  │  • live / clips / Drive modules  │                   │
+│  │  • Connects to home WiFi         │                   │
+│  │  • Static IP: 192.168.0.236      │                   │
+│  │  • Starts pi_hub on :4000        │                   │
+│  │    (live HLS + clips + Drive)    │                   │
 │  └──────────────────────────────────┘                   │
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Repo layout
+## Hub (after home Wi‑Fi)
+
+SoftAP and hub never share `:4000` at the same time. Boot script:
+
+1. SoftAP / unconfigured → `pi-setup-api.py` only  
+2. Home Wi‑Fi OK → touch `.hub-ready` → `systemctl start pi-hub`
+
+Shared camera: **one** ffmpeg publisher → MediaMTX; live uses WebRTC, clips record from the same RTSP path (see [docs/WEBRTC-LAB.md](docs/WEBRTC-LAB.md)).
+
+| Method | Path | Module |
+|--------|------|--------|
+| GET | `/health` | hub (`mode: hub`, `publishing`, `webrtc`, `detection`, `drive`) |
+| GET | `/` | redirect to `/dev` |
+| GET | `/dev` | Drive sign-in portal (Google OAuth on the Pi) |
+| POST | `/start` `/stop` | `pi_hub.live` (WebRTC session; publisher stays) |
+| POST | `/motion` | `pi_hub.events` → `pi_hub.clips` (RTSP record) → `pi_hub.drive` |
+| POST / GET / DELETE | `/auth/drive` | phone OAuth handoff; status; disconnect |
+| GET | `/clips/cache` | local clip list (debug — app lists Drive, not this) |
+| POST | `/detect/start` `/detect/stop` | `pi_hub.detect` (OpenCV DNN on the shared RTSP feed) |
+| GET | `/detect/status` | detector state, counters, last detection |
+
+Package: `pi_hub/` · units: `systemd/pi-hub.service`, `systemd/mediamtx.service`
+
+### Object detection
+
+`pi_hub.detect` reads the same MediaMTX RTSP path as clips (never `/dev/video0` —
+`pi_hub.camera` owns that) and runs MobileNet-SSD through OpenCV's DNN module on a
+background thread. A `person` above the confidence floor raises a motion event via
+`pi_hub.events`, the identical path `POST /motion` uses, so detection and manual
+triggers produce the same clip + Drive upload.
+
+Weights are not in git. Fetch them (sha256-verified) once per Pi:
+
+```bash
+sudo ./scripts/fetch-detection-model.sh   # → homesecurity/models/
+sudo systemctl restart pi-hub
+curl -s http://localhost:4000/detect/status | jq
+```
+
+Tuning lives in `pi_hub/config.py`: `DETECT_TARGET_LABELS` (default `person` only —
+a cat should not wake anyone), `DETECT_MIN_CONFIDENCE`, `DETECT_INTERVAL_SEC`
+(inference sample rate, not frame rate) and `DETECT_COOLDOWN_SEC` (event
+suppression window). Without weights or without OpenCV installed the hub still
+boots and serves every other endpoint; `/detect/status` reports why detection is off.
+
+Decision logic is unit tested without hardware:
+
+```bash
+cd rasberry-pi-setup && python3 -m unittest discover -s tests -v
+```
+
+### Google Drive uploads
+
+Clips upload to the user's Drive once the phone completes OAuth and
+`POST /auth/drive` (LAN or Tailscale only). Token is Fernet-encrypted at
+`homesecurity/drive_token.json.enc`. Files land in an app-created **SentriHome**
+folder (`drive.file` scope — not shared publicly).
+
+Phone contract + Expo template: repo root `DOCUMENTATION.md`.
+
+Until the app ships OAuth, open the Pi’s **dev portal** and sign in there:
 
 ```
-rasberry-pi-setup/
-├── pi-setup-boot.sh          # ONLY entry: SoftAP vs start hub
-├── pi-setup-api.py           # SoftAP-only HTTP
-├── pi_hub/                   # runs ONLY after home Wi‑Fi
-│   ├── app.py                # one Flask process :4000
-│   ├── live.py               # ffmpeg HLS start/stop
-│   ├── clips.py              # record to local cache
-│   ├── drive.py              # token store + Drive upload
-│   └── config.py
-├── systemd/
-│   ├── pi-setup.service      # always on boot (network gate)
-│   └── pi-hub.service        # started by boot after Wi‑Fi
-├── install-pi-setup.sh       # run on the Pi
-├── deploy-to-pi.sh           # copy + install from your laptop
-└── requirements.txt
+http://192.168.0.236:4000/dev
+http://100.66.51.106:4000/dev
 ```
 
-On the Pi after install: scripts and `pi_hub/` live under `/home/koushik/`; data under `/home/koushik/homesecurity/`.
+Save a Google Cloud **Web application** client, add the callback URI shown on
+the page, then **Connect Google Drive**. Clips then upload to a `SentriHome`
+folder.
 
-## SoftAP API (setup mode only)
+```bash
+# after the phone (or curl) has posted credentials:
+curl -s http://192.168.0.236:4000/auth/drive   # { linked, email, last_upload, error }
+curl -s -X POST http://192.168.0.236:4000/motion
+# Drive → SentriHome / clip-*.mp4
+```
+
+Re-deploy needs `pip3 install -r requirements.txt` (now includes `cryptography`).
+
+## API Endpoints
 
 ### `GET /status`
+Health check
 ```json
 {
   "status": "ready",
@@ -91,209 +137,118 @@ On the Pi after install: scripts and `pi_hub/` live under `/home/koushik/`; data
 ```
 
 ### `GET /scan`
-Lists nearby WiFi networks (`ssid`, `signal`, `security`).
+List available WiFi networks
+```json
+{
+  "networks": [
+    {"ssid": "HomeNetwork", "signal": 75, "security": "WPA2"},
+    {"ssid": "Guest", "signal": 45, "security": "WPA2"}
+  ]
+}
+```
 
 ### `POST /wifi`
+Set WiFi credentials
 ```json
-{ "ssid": "HomeNetwork", "password": "mypassword" }
+{
+  "ssid": "HomeNetwork",
+  "password": "mypassword"
+}
 ```
 
-## Hub API (after home Wi‑Fi)
-
-| Method | Path | Module | Notes |
-|--------|------|--------|--------|
-| GET | `/health` | hub | `mode: "hub"` |
-| POST | `/start` `/stop` | `live` | On-demand HLS (ffmpeg stub until camera wired) |
-| POST | `/motion` | `clips` → `drive` | Cache clip, then upload |
-| POST | `/auth/drive` | `drive` | `{ "refresh_token", "email" }` from app |
-| GET | `/hls/<file>` | hub | Playlist/segments |
-| GET | `/clips/cache` | clips | Debug local cache (app lists Drive, not this) |
-
-## Deploying changes to the Pi
-
-### CI deploy (GitHub Actions → pull on Pi)
-
-On every push that touches `rasberry-pi-setup/**` (or the workflow file), [`.github/workflows/pi-deploy.yml`](../.github/workflows/pi-deploy.yml):
-
-1. Optionally joins your **Tailscale** tailnet (`TS_AUTHKEY`)
-2. **SSH** to the Pi
-3. `git fetch` + checkout that commit in the on-Pi clone
-4. Runs `scripts/ci-pull-deploy.sh` → `install-pi-setup.sh` (`SKIP_APT=1`) → restart `pi-hub`
-5. `curl http://127.0.0.1:4000/health` must show `mode: hub` when `.hub-ready` exists
-
-Manual re-run: Actions → **Pi pull & deploy** → Run workflow.
-
-#### One-time Pi bootstrap
-
-```bash
-# 1) Clone (once) — path must match PI_REPO_DIR secret (default below)
-git clone git@github.com:<org>/Home-Security.git /home/koushik/Home-Security
-# or HTTPS with a deploy key / credential helper
-
-# 2) First install
-cd /home/koushik/Home-Security/rasberry-pi-setup
-sudo ./install-pi-setup.sh
-
-# 3) SSH key for GitHub Actions (on your laptop)
-ssh-keygen -t ed25519 -f ./pi-deploy-key -N "" -C "github-actions-pi-deploy"
-ssh-copy-id -i ./pi-deploy-key.pub koushik@192.168.0.236
-# Add pi-deploy-key (PRIVATE) as repo secret PI_SSH_KEY — never commit it
-
-# 4) Passwordless sudo for install/restart (on Pi)
-sudo visudo -f /etc/sudoers.d/homesecurity-ci
-# add:
-# koushik ALL=(root) NOPASSWD: /home/koushik/Home-Security/rasberry-pi-setup/install-pi-setup.sh, /bin/systemctl restart pi-hub.service, /bin/systemctl start pi-hub.service, /bin/systemctl daemon-reload, /bin/systemctl enable pi-setup.service, /usr/bin/cp, /usr/bin/rm, /bin/mkdir, /usr/bin/chmod, /usr/bin/chown, /usr/bin/touch, /usr/bin/nmcli, /bin/systemctl
-
-# Simpler (dev only):  koushik ALL=(ALL) NOPASSWD: ALL
-
-# 5) Tailscale on Pi (same account as TS_AUTHKEY)
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up
+Response:
+```json
+{
+  "success": true,
+  "message": "WiFi credentials saved, switching to home network..."
+}
 ```
 
-#### GitHub repo secrets
+## Installation
 
-| Secret | Required | Example |
-|--------|----------|---------|
-| `PI_SSH_HOST` | yes | MagicDNS name or `100.x` of the Pi |
-| `PI_SSH_USER` | yes | `koushik` |
-| `PI_SSH_KEY` | yes | full private key PEM |
-| `TS_AUTHKEY` | recommended | reusable auth key so Actions can reach the Pi |
-| `PI_REPO_DIR` | no | `/home/koushik/Home-Security` |
-
-Create a Tailscale auth key under Admin → Settings → Keys (reusable, tag e.g. `tag:ci`). Prefer OAuth client later if you tighten ACLs.
-
-The Pi clone must be able to `git fetch` (deploy key with read access, or HTTPS token).
-
-### Full deploy from laptop (LAN)
+On the Pi:
 
 ```bash
-cd rasberry-pi-setup
-./deploy-to-pi.sh
-```
-
-Optional env overrides:
-
-```bash
-PI_IP=192.168.0.236 PI_USER=koushik ./deploy-to-pi.sh
-```
-
-`deploy-to-pi.sh` scp’s files and runs `install-pi-setup.sh` (does not use git pull).
-
-Then reboot so SoftAP → hub handoff runs cleanly:
-
-```bash
-ssh koushik@192.168.0.236 'sudo reboot'
-curl http://192.168.0.236:4000/health   # after Wi‑Fi: expect "mode":"hub"
-```
-
-### First-time install (on the Pi itself)
-
-```bash
-cd /path/to/Home-Security/rasberry-pi-setup
+cd /path/to/Home-Security
 chmod +x install-pi-setup.sh
 sudo ./install-pi-setup.sh
 sudo reboot
 ```
 
-### Hub-only iterate (already provisioned, no CI)
+## Files
 
-When you only changed Python under `pi_hub/`:
-
-```bash
-scp -r pi_hub koushik@192.168.0.236:/home/koushik/
-ssh koushik@192.168.0.236 \
-  'sudo touch /home/koushik/homesecurity/.hub-ready && sudo systemctl restart pi-hub'
-curl http://192.168.0.236:4000/health
-```
-
-### What install puts where
-
-| Source (repo) | On Pi |
-|---------------|--------|
-| `pi-setup-api.py`, `pi-setup-boot.sh` | `/home/koushik/` |
-| `pi_hub/` | `/home/koushik/pi_hub/` |
-| `systemd/pi-setup.service` | `/etc/systemd/system/` (enabled) |
-| `systemd/pi-hub.service` | `/etc/systemd/system/` (started by boot after Wi‑Fi) |
-| runtime data | `/home/koushik/homesecurity/` (hls, clips, Drive token) |
-| WiFi config | `/home/koushik/wifi-credentials.json` |
-
-`pi-hub` is **not** `WantedBy=multi-user` — SoftAP boot owns the gate and starts the hub only after home Wi‑Fi succeeds (avoids `:4000` races).
+- `pi-setup-api.py` → Flask HTTP server for credential submission
+- `pi-setup-boot.sh` → Boot script (checks config, starts SoftAP or connects)
+- `pi-setup.service` → systemd service
+- `install-pi-setup.sh` → One-command installer
+- `/home/koushik/wifi-credentials.json` → Saved WiFi config (created on setup)
 
 ## Troubleshooting
 
-### Status / logs
+### Check status
 ```bash
 systemctl status pi-setup.service
-systemctl status pi-hub.service
 tail -f /var/log/pi-setup.log
-journalctl -u pi-hub -f
 ```
 
 ### Reset to SoftAP mode
 ```bash
 sudo rm /home/koushik/wifi-credentials.json
-sudo rm -f /home/koushik/homesecurity/.hub-ready
-sudo systemctl stop pi-hub
 sudo systemctl restart pi-setup.service
 ```
 
-### Manual SoftAP control
+### Manual hotspot control
 ```bash
+# Start SoftAP (also done automatically by pi-setup.service when unconfigured)
 sudo nmcli connection up HomeSecurity-Setup
+
+# Stop SoftAP, return to home WiFi
 sudo nmcli connection down HomeSecurity-Setup
 sudo nmcli connection up "<your-home-ssid>"
 ```
 
-### DHCP (dnsmasq)
+SoftAP should **start on its own** at boot when `/home/koushik/wifi-credentials.json` is missing.
+You should not need to click **HomeSecurity-Setup** in the WiFi menu — that entry is only the NetworkManager profile.
+
+### DHCP conflict (dnsmasq)
+Fixed automatically by install script. Verify:
 ```bash
 systemctl is-active dnsmasq  # should be: inactive
-sudo ss -ulnp | grep :67     # empty when not in hotspot
+sudo ss -ulnp | grep :67     # should be empty when NOT in hotspot
 ```
 
 ## Mobile App Integration
 
-See `mobile/app/(tabs)/setup.tsx`.
+See `mobile/app/(tabs)/setup.tsx` for React Native implementation.
 
-1. Join `HomeSecurity-Setup`
-2. Hit `http://10.42.0.1:4000`
-3. `GET /scan` → user picks network + password
-4. `POST /wifi`
-5. Phone rejoins home WiFi
-6. Verify `http://192.168.0.236:4000/health` (`mode: hub`)
+Expected flow:
+1. App guides user to join "HomeSecurity-Setup"
+2. Once connected, app detects `10.42.0.1:4000`
+3. App shows WiFi picker (from `GET /scan`)
+4. User selects network + enters password
+5. App sends `POST /wifi`
+6. App instructs user to reconnect phone to home WiFi
+7. App discovers Pi at `192.168.0.236` (mDNS or static IP)
 
 ## Network Summary
 
 | Mode | Interface | IP | SSID | Purpose |
 |------|-----------|-------|------|---------|
 | **Setup** | wlan0 AP | 10.42.0.1 | HomeSecurity-Setup | First-time config |
-| **Hub** | wlan0 STA | 192.168.0.236 | (home WiFi) | Live, clips, Drive, health |
+| **Normal** | wlan0 STA | 192.168.0.236 | (home WiFi) | Day-to-day operation |
 
-Home mode uses NetworkManager **manual** IPv4 `192.168.0.236/24` (gateway `192.168.0.1`).
+Home mode always uses NetworkManager **manual** IPv4 `192.168.0.236/24` (gateway `192.168.0.1`), applied on SoftAP provisioning and reasserted on every boot.
 
 ## Security Notes
 
-- SoftAP password is hardcoded (`setup1234`) — change in `pi-setup-boot.sh`
-- APIs are HTTP-only — OK on SoftAP / LAN; Tailscale for remote live
-- WiFi creds plaintext in `wifi-credentials.json` — restrict perms
-- Drive token: encrypt at rest before shipping (stub today — README §18)
-- Setup/hub run as root via systemd (nmcli + camera)
-
-## WebRTC lab (MediaMTX)
-
-Low-latency live spike (not yet wired into `pi_hub`): see **[docs/WEBRTC-LAB.md](docs/WEBRTC-LAB.md)**.
-
-- Play LAN: `http://192.168.0.236:8889/cam`
-- Play Tailscale: `http://100.66.51.106:8889/cam`
-- Helpers: `scripts/webrtc-lab-mediamtx.sh`, `scripts/webrtc-lab-publish.sh`
+- SoftAP password is hardcoded (`setup1234`) → change in `pi-setup-boot.sh` nmcli command
+- API runs HTTP only (no TLS) → acceptable on isolated SoftAP; add TLS if needed
+- Credentials stored plaintext in `/home/koushik/wifi-credentials.json` → restrict perms
+- API requires root for `nmcli` → runs as root (systemd User=root)
 
 ## Next Steps
 
-1. ✓ SoftAP + boot gate + hub handoff
-2. ✓ `pi_hub` barebones routes matching the mobile `piApi` stubs
-3. ✓ WebRTC lab via MediaMTX + ffmpeg (manual; see `docs/WEBRTC-LAB.md`)
-4. ⏭ Wire `pi_hub.live` to MediaMTX / promote WebRTC in README D4
-5. ⏭ Real clip record + Drive upload
-6. ⏭ Encrypt Drive token at rest
-7. ⏭ Tailscale install docs / MagicDNS (§13 test 13.4)
-8. ⏭ mDNS optional alternative to static `.236`
+1. ✓ Pi SoftAP + HTTP API
+2. ⏭ Mobile app setup screen (connect + credential submission)
+3. ⏭ Boot automation (systemd service on Pi)
+4. ⏭ mDNS discovery (optional alternative to static `.236`)

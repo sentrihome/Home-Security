@@ -1,9 +1,11 @@
 export type AuthSession = {
-  /** Google access token (short-lived); app uses this for Drive later. */
+  /** Google access token (short-lived). */
   token: string;
   email: string;
-  /** Google refresh token — sent to the Pi via POST /auth/drive. */
-  refreshToken: string;
+  /** Long-lived Google refresh token handed to the Pi via POST /auth/drive. */
+  refreshToken?: string;
+  /** Google Sign-In server auth code — Pi can exchange this if refresh_token is missing. */
+  serverAuthCode?: string;
 };
 
 export type EventClip = {
@@ -19,6 +21,22 @@ export type EventClip = {
 export type StreamStatus = {
   live?: boolean;
   deviceId?: string;
+  [key: string]: unknown;
+};
+
+export type WebrtcUrls = {
+  lan?: string;
+  tailscale_ip?: string;
+  tailscale_host?: string;
+};
+
+/** Response from Pi `POST /start` (MediaMTX WebRTC live session). */
+export type LiveStartResponse = {
+  ok?: boolean;
+  streaming?: boolean;
+  error?: string;
+  webrtc_url?: string;
+  webrtc?: WebrtcUrls;
   [key: string]: unknown;
 };
 

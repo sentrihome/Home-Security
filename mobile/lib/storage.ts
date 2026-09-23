@@ -8,6 +8,7 @@ const SESSION_KEY = 'homesecurity.auth.session';
 const CLOUD_URL_KEY = 'homesecurity.cloud.baseUrl';
 const PI_HOST_KEY = 'homesecurity.pi.host';
 const ESP_RANDOM_PASS_KEY = 'homesecurity.esp.randomPass';
+const FCM_TOKEN_KEY = 'homesecurity.fcm.token';
 
 async function setItem(key: string, value: string) {
   if (Platform.OS === 'web') {
@@ -80,4 +81,16 @@ export async function loadEspRandomPassword(): Promise<string | null> {
 
 export async function clearEspRandomPassword() {
   await deleteItem(ESP_RANDOM_PASS_KEY);
+}
+
+export async function saveFcmToken(token: string) {
+  await setItem(FCM_TOKEN_KEY, token);
+}
+
+export async function loadFcmToken(): Promise<string | null> {
+  return getItem(FCM_TOKEN_KEY);
+}
+
+export async function clearFcmToken() {
+  await deleteItem(FCM_TOKEN_KEY);
 }
