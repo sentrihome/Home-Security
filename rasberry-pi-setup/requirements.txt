@@ -1,6 +1,3 @@
 flask>=3.0,<4
-# Object detection on the shared MediaMTX feed (pi_hub/detect.py).
-# headless: no GUI/Qt bindings — the Pi never draws a window.
-opencv-python-headless>=4.8,<5
-# Drive token encrypted at rest (pi_hub/drive.py). Upload itself is stdlib HTTPS.
-cryptography>=42,<47
+google-auth>=2.0,<3
+requests>=2.31,<3

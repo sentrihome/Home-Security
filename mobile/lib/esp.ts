@@ -1,21 +1,19 @@
 /**
- * ESP HTTP client for the pairing/setup flow.
+ * ESP HTTP client for SoftAP pairing.
  *
- * Talks to the ESP's SoftAP directly at http://192.168.4.1 while the phone is
- * joined to either "ESP32_Master_Config" (main setup) or "ESPMODULE" (module pairing).
- *
- * Endpoint paths currently being renamed by the firmware team — empty-string
- * placeholders below will be filled in as those renames are confirmed.
- *
- * Ported from:
- *   ESP32PairingApp/app/src/main/java/com/example/esp32pairingapp/network/EspHttpClient.kt
- *
- * Every request body is application/x-www-form-urlencoded (NOT JSON).
+ * Phone must be joined to SoftAP `espwifi` (password `23012003`), then talk to
+ * http://192.168.4.1 — firmware exposes only:
+ *   GET  /health
+ *   POST /pair   (application/json)
  */
 
 export const ESP_BASE = 'http://192.168.4.1';
+export const ESP_SOFTAP_SSID = 'espwifi';
+export const ESP_SOFTAP_PASSWORD = '23012003';
 
 const DEFAULT_TIMEOUT_MS = 8000;
+/** /pair waits on UART + Station Wi-Fi join; allow extra headroom. */
+const PAIR_TIMEOUT_MS = 20000;
 
 export class EspError extends Error {
   status?: number;
@@ -31,23 +29,10 @@ export function cleanInput(value: string): string {
   return value.trim().replace(/\p{C}/gu, '');
 }
 
-function enc(value: string): string {
-  return encodeURIComponent(cleanInput(value));
-}
-
-function ensurePath(path: string, caller: string) {
-  if (!path) {
-    throw new EspError(
-      `${caller}: endpoint path is not configured. Update lib/esp.ts with the new firmware path.`
-    );
-  }
-}
-
 async function getText(
   path: string,
   timeoutMs: number = DEFAULT_TIMEOUT_MS
 ): Promise<string> {
-  ensurePath(path, 'GET');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -69,22 +54,21 @@ async function getText(
   }
 }
 
-async function postForm(
+async function postJson(
   path: string,
-  body: string,
+  body: unknown,
   timeoutMs: number = DEFAULT_TIMEOUT_MS
 ): Promise<string> {
-  ensurePath(path, 'POST');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${ESP_BASE}${path}`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'text/plain',
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/plain',
       },
-      body,
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
     const text = await response.text();
@@ -100,90 +84,82 @@ async function postForm(
   }
 }
 
-/**
- * Endpoints that restart Wi-Fi mid-response can drop the socket before we finish
- * reading the response. Treat those drops as success — the ESP received the
- * request before it tore Wi-Fi down.
- */
-async function postFormTolerant(path: string, body: string): Promise<string> {
-  try {
-    return await postForm(path, body);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (
-      msg.includes('Network request failed') ||
-      msg.includes('aborted') ||
-      msg.includes('The operation was aborted') ||
-      msg.includes('Connection reset')
-    ) {
-      return 'OK';
-    }
-    throw err;
-  }
-}
-
-export type WifiStatusResponse = {
-  connected: boolean;
-  ip?: string;
-  state?: string;
-  reason?: string;
+/** JSON body for POST /pair — keys must match firmware (lowercase). */
+export type PairPayload = {
+  homessid: string;
+  homepass: string;
+  permpass: string;
+  encryptedpass: string;
+  schedulestart: string;
+  schedulestop: string;
+  raspberrypiip: string;
+  /** Optional; forwarded in raw JSON if Station/AP starts using it. */
+  securitykey?: string;
 };
 
-// ── Endpoints ────────────────────────────────────────────────────────────────
-// Empty-string paths are placeholders awaiting firmware confirmation.
+export type PairResponse = {
+  raw: string;
+  /** true / false when firmware reports Station Wi-Fi join result */
+  wifiConnection?: boolean;
+  /** Present on successful join; SoftAP rotate may still be disabled in firmware */
+  newApPassword?: string;
+  /** e.g. received | NO ACCESS | corrupted | INVALID JSON */
+  pairingStatus?: string;
+};
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function parseWifiConnectionFlag(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v === 'true') return true;
+    if (v === 'false') return false;
+  }
+  return undefined;
+}
+
+export function parsePairResponse(raw: string): PairResponse {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const pairingStatus =
+      asString(parsed['pairing payload']) ??
+      asString(parsed['pairing payload received']);
+    return {
+      raw,
+      wifiConnection: parseWifiConnectionFlag(parsed.wifiConnection),
+      newApPassword: asString(parsed.new_ap_password),
+      pairingStatus,
+    };
+  } catch {
+    return { raw, pairingStatus: raw.trim() || undefined };
+  }
+}
 
 export async function health(): Promise<string> {
   return getText('/health');
 }
 
-export async function wifiStatus(): Promise<WifiStatusResponse> {
-  const raw = await getText('');
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      connected: Boolean(parsed.connected),
-      ip: typeof parsed.ip === 'string' ? parsed.ip : undefined,
-      state: typeof parsed.state === 'string' ? parsed.state : undefined,
-      reason: typeof parsed.reason === 'string' ? parsed.reason : undefined,
-    };
-  } catch {
-    return { connected: false, state: raw.trim() };
-  }
-}
-
-export async function sendSsid(ssid: string): Promise<string> {
-  return postForm('/ssid', `ssid=${enc(ssid)}`);
-}
-
-export async function sendPass(pass: string): Promise<string> {
-  return postForm('/pass', `password=${enc(pass)}`);
-}
-
-/** Rotates the ESP SoftAP password. Restarts Wi-Fi — socket may drop mid-response. */
-export async function sendEncryptedPass(pass: string): Promise<string> {
-  return postFormTolerant('/encryptedpass', `encryptedpass=${enc(pass)}`);
-}
-
-export async function sendPermanentPass(pass: string): Promise<string> {
-  return postForm('/permanentpass', `permanentpass=${enc(pass)}`);
-}
-
-export async function sendOneTimePass(otp: string): Promise<string> {
-  return postForm('/otp', `otp=${enc(otp)}`);
-}
-
 /**
- * Sent while the phone is joined to the module's AP (ESPMODULE). The module then
- * uses this password to join the main ESP going forward.
+ * Send the full pairing config in one shot. Phone must stay on espwifi until
+ * the response returns (or times out).
  */
-export async function sendMainConnection(pass: string): Promise<string> {
-  return postForm('', `pass=${enc(pass)}`);
-}
+export async function pair(payload: PairPayload): Promise<PairResponse> {
+  const body: Record<string, string> = {
+    homessid: cleanInput(payload.homessid),
+    homepass: cleanInput(payload.homepass),
+    permpass: cleanInput(payload.permpass),
+    encryptedpass: cleanInput(payload.encryptedpass),
+    schedulestart: cleanInput(payload.schedulestart),
+    schedulestop: cleanInput(payload.schedulestop),
+    raspberrypiip: cleanInput(payload.raspberrypiip),
+  };
+  if (payload.securitykey != null && cleanInput(payload.securitykey)) {
+    body.securitykey = cleanInput(payload.securitykey);
+  }
 
-export async function sendSchedule(
-  start: string,
-  stop: string
-): Promise<string> {
-  return postForm('/schedule', `schedulestart=${enc(start)}&schedulestop=${enc(stop)}`);
+  const raw = await postJson('/pair', body, PAIR_TIMEOUT_MS);
+  return parsePairResponse(raw);
 }
-
